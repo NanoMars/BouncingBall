@@ -2,19 +2,22 @@ import pygame
 import sys
 import numpy as np
 import random
+import time
+import pygame.gfxdraw
 
 # Initialize Pygame
 pygame.init()
 screen_width = 720
 screen_height = 720
 screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Ball Bouncing Simulation")
+pygame.display.set_caption("Ball Bouncing Inside a Circle")
 clock = pygame.time.Clock()
 framerate = 60
 
 # Constants
-gravity = np.array([0, 500], dtype='float64')  # Gravity vector
-ball_size = 50
+gravity = np.array([500, 500], dtype='float64')  # Gravity vector
+air_resistance = 0.999  # Air resistance coefficient (1 means no air resistance)
+ball_size = 65
 
 # Ball class
 class Ball:
@@ -25,29 +28,34 @@ class Ball:
         self.color = color
         self.velocity = np.array(velocity, dtype='float64')
 
-    def update(self, dt):
-        # Apply gravity
+    def update(self, dt, center, circle_radius):
         self.velocity += gravity * dt
+        self.velocity *= air_resistance
         self.pos += self.velocity * dt
-        self.check_boundary_collision()
+        self.check_collision_with_boundary(center, circle_radius)
 
-    def check_boundary_collision(self):
-        if self.pos[0] - self.radius < 0 or self.pos[0] + self.radius > screen_width:
-            self.velocity[0] *= -1
-        if self.pos[1] - self.radius < 0 or self.pos[1] + self.radius > screen_height:
-            self.velocity[1] *= -1
+    def check_collision_with_boundary(self, center, circle_radius):
+        to_center = self.pos - center
+        distance_to_center = np.linalg.norm(to_center)
+        if distance_to_center + self.radius > circle_radius:
+            normal = to_center / distance_to_center
+            self.velocity -= 2 * np.dot(self.velocity, normal) * normal
+            self.pos = center + normal * (circle_radius - self.radius)
 
     def draw(self, screen):
-        pygame.draw.circle(screen, self.color, self.pos.astype(int), self.radius)
+        pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
+        pygame.gfxdraw.aacircle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
 
 def get_random_velocity():
     angle = random.uniform(0, 2 * np.pi)
     speed = random.uniform(100, 400)
     return np.array([speed * np.cos(angle), speed * np.sin(angle)], dtype='float64')
 
+# Main loop
 def main():
     center = np.array([screen_width // 2, screen_height // 2], dtype='float64')
-    balls = [Ball(center[0], center[1], ball_size, (0, 255, 0), [200, 0])]
+    circle_radius = 300
+    ball = Ball(center[0], center[1], ball_size, (0, 255, 0), [200, 0])
     running = True
 
     while running:
@@ -57,17 +65,16 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_d:
-                new_ball = Ball(center[0], center[1], ball_size,
-                                (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), 
-                                get_random_velocity())
-                balls.append(new_ball)
+                ball = Ball(center[0], center[1], ball_size, 
+                            (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), 
+                            get_random_velocity())
 
-        for ball in balls:
-            ball.update(dt)
+        ball.update(dt, center, circle_radius)
 
         screen.fill((0, 0, 0))
-        for ball in balls:
-            ball.draw(screen)
+        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius, (255, 255, 255))
+        pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius, (0, 0, 0, 0))
+        ball.draw(screen)
 
         pygame.display.flip()
 
