@@ -1,5 +1,6 @@
 import pygame
 import sys
+import os
 import numpy as np
 import random
 import time
@@ -13,6 +14,22 @@ screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("Ball Bouncing Inside a Circle")
 clock = pygame.time.Clock()
 framerate = 60
+
+# Initialize Pygame mixer
+pygame.mixer.init()
+
+# Load sounds
+sound_folder = os.path.join(os.path.dirname(__file__), 'Sounds')
+sound_files = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')]
+sound_files.sort()  # Ensure the sounds are played in the correct order
+sounds = [pygame.mixer.Sound(os.path.join(sound_folder, f)) for f in sound_files]
+sound_index = 0
+
+# Function to play the next sound
+def play_next_sound():
+    global sound_index
+    sounds[sound_index].play()
+    sound_index = (sound_index + 1) % len(sounds)
 
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
@@ -79,6 +96,7 @@ class Ball:
     def on_collision(self):
         new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, 10, self.color)
         growing_circles.append(new_circle)
+        play_next_sound()
 
     def draw(self, screen):
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
