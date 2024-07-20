@@ -5,6 +5,7 @@ import numpy as np
 import random
 import time
 import pygame.gfxdraw
+import pygame.sndarray
 
 # Initialize Pygame
 pygame.init()
@@ -18,18 +19,31 @@ framerate = 60
 # Initialize Pygame mixer
 pygame.mixer.init()
 
-# Load sounds
+# Load sound
 sound_folder = os.path.join(os.path.dirname(__file__), 'Sounds')
-sound_files = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')]
-sound_files.sort()  # Ensure the sounds are played in the correct order
-sounds = [pygame.mixer.Sound(os.path.join(sound_folder, f)) for f in sound_files]
-sound_index = 0
+sound_file = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')][0]
+sound_path = os.path.join(sound_folder, sound_file)
+sound = pygame.mixer.Sound(sound_path)
 
-# Function to play the next sound
-def play_next_sound():
-    global sound_index
-    sounds[sound_index].play()
-    sound_index = (sound_index + 1) % len(sounds)
+# Sound slicing variables
+sound_array = pygame.sndarray.array(sound)
+sound_length = sound.get_length()
+slice_length = 0.5  # 0.5 second
+num_slices = int(sound_length / slice_length)
+current_slice_index = 0
+sample_rate = sound_array.shape[0] / sound_length
+
+# Calculate the number of samples per slice
+samples_per_slice = int(slice_length * sample_rate)
+
+# Function to play the next sound slice
+def play_next_sound_slice():
+    global current_slice_index
+    start_index = current_slice_index * samples_per_slice
+    end_index = start_index + samples_per_slice
+    sound_slice = pygame.sndarray.make_sound(sound_array[start_index:end_index])
+    sound_slice.play()
+    current_slice_index = (current_slice_index + 1) % num_slices
 
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
@@ -96,7 +110,7 @@ class Ball:
     def on_collision(self):
         new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, 10, self.color)
         growing_circles.append(new_circle)
-        play_next_sound()
+        play_next_sound_slice()
 
     def draw(self, screen):
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
@@ -148,3 +162,6 @@ while running:
         circle.draw(screen)
 
     pygame.display.flip()
+
+pygame.quit()
+sys.exit()
