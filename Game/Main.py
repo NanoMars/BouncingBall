@@ -48,7 +48,7 @@ def play_next_sound_slice():
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
 air_resistance = 0.998  # Air resistance coefficient (1 means no air resistance)
-ball_size = 65
+ball_size = 56
 
 growing_circles = []
 
@@ -71,10 +71,6 @@ class GrowingCircle:
         # Return True if still visible, False if fully transparent
         return self.alpha > 0
 
-    def is_transparent(self):
-        # Check if the circle is fully transparent
-        return self.alpha == 0
-
     def draw(self, screen):
         # Create a color with the current alpha value
         color_with_alpha = (*self.color, int(self.alpha))
@@ -83,7 +79,6 @@ class GrowingCircle:
         pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
 
-# Ball class
 class Ball:
     def __init__(self, x, y, size, color, velocity):
         self.pos = np.array([x, y], dtype='float64')
@@ -91,12 +86,20 @@ class Ball:
         self.radius = size // 2
         self.color = color
         self.velocity = np.array(velocity, dtype='float64')
+        self.invulnerable = True
+        self.invulnerable_timer = 0.5  # 0.25 seconds of invulnerability
+        self.has_bounced = False
 
     def update(self, dt, center, circle_radius):
         self.velocity += gravity * dt
         self.velocity *= air_resistance
         self.pos += self.velocity * dt
         self.check_collision_with_boundary(center, circle_radius)
+
+        if self.invulnerable:
+            self.invulnerable_timer -= dt
+            if self.invulnerable_timer <= 0:
+                self.invulnerable = False
 
     def check_collision_with_boundary(self, center, circle_radius):
         to_center = self.pos - center
@@ -108,6 +111,9 @@ class Ball:
             self.on_collision()
 
     def on_collision(self):
+        new_ball = Ball(center[0], center[1], ball_size, (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), get_random_velocity())
+        new_ball.invulnerable_timer = 0.25  # Ensure the new ball is invulnerable for a short period
+        balls.append(new_ball)
         new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, 10, self.color)
         growing_circles.append(new_circle)
         play_next_sound_slice()
@@ -120,6 +126,24 @@ def get_random_velocity():
     angle = random.uniform(0, 2 * np.pi)
     speed = random.uniform(100, 1000)
     return np.array([speed * np.cos(angle), speed * np.sin(angle)], dtype='float64')
+
+def check_ball_collisions():
+    global balls
+    new_balls = []
+    while balls:
+        ball = balls.pop(0)
+        if not ball.invulnerable:
+            collided = False
+            for other_ball in balls:
+                if np.linalg.norm(ball.pos - other_ball.pos) < ball.radius + other_ball.radius:
+                    collided = True
+                    balls.remove(other_ball)
+                    break
+            if not collided:
+                new_balls.append(ball)
+        else:
+            new_balls.append(ball)
+    balls = new_balls
 
 center = np.array([screen_width // 2, screen_height // 2], dtype='float64')
 circle_radius = 300
@@ -144,6 +168,8 @@ while running:
     # Update all balls
     for ball in balls:
         ball.update(dt, center, circle_radius)
+
+    check_ball_collisions()
 
     # Update all growing circles and filter out the transparent ones
     growing_circles = [circle for circle in growing_circles if circle.update(dt)]
