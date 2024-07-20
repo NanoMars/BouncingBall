@@ -15,8 +15,8 @@ clock = pygame.time.Clock()
 framerate = 60
 
 # Constants
-gravity = np.array([500, 500], dtype='float64')  # Gravity vector
-air_resistance = 0.999  # Air resistance coefficient (1 means no air resistance)
+gravity = np.array([0, 300], dtype='float64')  # Gravity vector
+air_resistance = 0.998  # Air resistance coefficient (1 means no air resistance)
 ball_size = 65
 
 # Ball class
@@ -48,38 +48,40 @@ class Ball:
 
 def get_random_velocity():
     angle = random.uniform(0, 2 * np.pi)
-    speed = random.uniform(100, 400)
+    speed = random.uniform(100, 1000)
     return np.array([speed * np.cos(angle), speed * np.sin(angle)], dtype='float64')
 
-# Main loop
-def main():
-    center = np.array([screen_width // 2, screen_height // 2], dtype='float64')
-    circle_radius = 300
-    ball = Ball(center[0], center[1], ball_size, (0, 255, 0), [200, 0])
-    running = True
+center = np.array([screen_width // 2, screen_height // 2], dtype='float64')
+circle_radius = 300
+balls = []  # Initialize an empty list for balls
 
-    while running:
-        dt = clock.tick(framerate) / 1000.0
+initial_ball = Ball(center[0], center[1], ball_size, (0, 255, 0), [200, 0])
+balls.append(initial_ball)
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_d:
-                ball = Ball(center[0], center[1], ball_size, 
+running = True
+while running:
+    
+    dt = clock.tick(framerate) / 1000.0
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_d:
+            new_ball = Ball(center[0], center[1], ball_size, 
                             (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), 
                             get_random_velocity())
+            balls.append(new_ball)
 
+    # Update all balls
+    for ball in balls:
         ball.update(dt, center, circle_radius)
 
-        screen.fill((0, 0, 0))
-        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius, (255, 255, 255))
-        pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius, (0, 0, 0, 0))
+    # Clear screen
+    screen.fill((0, 0, 0))
+    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius, (255, 255, 255))
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius, (0, 0, 0, 0))
+
+    # Draw all balls
+    for ball in balls:
         ball.draw(screen)
 
-        pygame.display.flip()
-
-    pygame.quit()
-    sys.exit()
-
-if __name__ == "__main__":
-    main()
+    pygame.display.flip()
