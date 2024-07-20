@@ -19,6 +19,39 @@ gravity = np.array([0, 300], dtype='float64')  # Gravity vector
 air_resistance = 0.998  # Air resistance coefficient (1 means no air resistance)
 ball_size = 65
 
+growing_circles = []
+
+class GrowingCircle:
+    def __init__(self, x, y, initial_radius, growth_rate, color, initial_alpha=255, fade_rate=255):
+        self.pos = np.array([x, y], dtype='float64')
+        self.radius = initial_radius
+        self.growth_rate = growth_rate
+        self.color = color
+        self.alpha = initial_alpha
+        self.fade_rate = fade_rate  # Rate at which the alpha decreases
+
+    def update(self, dt):
+        # Increase the radius based on the growth rate
+        self.radius += self.growth_rate * dt
+        # Decrease the alpha based on the fade rate
+        self.alpha -= self.fade_rate * dt
+        # Ensure alpha does not go below zero
+        self.alpha = max(self.alpha, 0)
+        # Return True if still visible, False if fully transparent
+        return self.alpha > 0
+
+    def is_transparent(self):
+        # Check if the circle is fully transparent
+        return self.alpha == 0
+
+    def draw(self, screen):
+        # Create a color with the current alpha value
+        color_with_alpha = (*self.color, int(self.alpha))
+        surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        pygame.gfxdraw.filled_circle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
+        pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
+        screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
+
 # Ball class
 class Ball:
     def __init__(self, x, y, size, color, velocity):
@@ -41,6 +74,11 @@ class Ball:
             normal = to_center / distance_to_center
             self.velocity -= 2 * np.dot(self.velocity, normal) * normal
             self.pos = center + normal * (circle_radius - self.radius)
+            self.on_collision()
+
+    def on_collision(self):
+        new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, 10, self.color)
+        growing_circles.append(new_circle)
 
     def draw(self, screen):
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
@@ -75,6 +113,9 @@ while running:
     for ball in balls:
         ball.update(dt, center, circle_radius)
 
+    # Update all growing circles and filter out the transparent ones
+    growing_circles = [circle for circle in growing_circles if circle.update(dt)]
+    
     # Clear screen
     screen.fill((0, 0, 0))
     pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius, (255, 255, 255))
@@ -83,5 +124,9 @@ while running:
     # Draw all balls
     for ball in balls:
         ball.draw(screen)
+
+    # Draw all growing circles
+    for circle in growing_circles:
+        circle.draw(screen)
 
     pygame.display.flip()
