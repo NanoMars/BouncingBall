@@ -47,8 +47,9 @@ def play_next_sound_slice():
 
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
-air_resistance = 0.998  # Air resistance coefficient (1 means no air resistance)
-ball_size = 56
+air_resistance = 1.001  # Air resistance coefficient (1 means no air resistance)
+ball_size = 100
+boundary_thickness = 10
 
 growing_circles = []
 
@@ -76,7 +77,7 @@ class GrowingCircle:
         color_with_alpha = (*self.color, int(self.alpha))
         surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         pygame.gfxdraw.filled_circle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
-        pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
+        # pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
 
 class Ball:
@@ -87,7 +88,7 @@ class Ball:
         self.color = color
         self.velocity = np.array(velocity, dtype='float64')
         self.invulnerable = True
-        self.invulnerable_timer = 0.5  # 0.25 seconds of invulnerability
+        self.invulnerable_timer = 999999999  # 0.25 seconds of invulnerability
         self.has_bounced = False
 
     def update(self, dt, center, circle_radius):
@@ -104,10 +105,10 @@ class Ball:
     def check_collision_with_boundary(self, center, circle_radius):
         to_center = self.pos - center
         distance_to_center = np.linalg.norm(to_center)
-        if distance_to_center + self.radius > circle_radius:
+        if distance_to_center + self.radius > circle_radius - boundary_thickness / 2:
             normal = to_center / distance_to_center
             self.velocity -= 2 * np.dot(self.velocity, normal) * normal
-            self.pos = center + normal * (circle_radius - self.radius)
+            self.pos = center + normal * (circle_radius - boundary_thickness / 2 - self.radius)
             self.on_collision()
 
     def on_collision(self):
@@ -121,6 +122,7 @@ class Ball:
     def draw(self, screen):
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
         pygame.gfxdraw.aacircle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
+        pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), int((4 * self.radius) / 5), (0,0,0))
 
 def get_random_velocity():
     angle = random.uniform(0, 2 * np.pi)
@@ -152,10 +154,12 @@ balls = []  # Initialize an empty list for balls
 initial_ball = Ball(center[0], center[1], ball_size, (0, 255, 0), [200, 0])
 balls.append(initial_ball)
 
+hue = 0
 running = True
 while running:
     
     dt = clock.tick(framerate) / 1000.0
+    hue = (hue + dt * 10) % 360
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -176,8 +180,19 @@ while running:
     
     # Clear screen
     screen.fill((0, 0, 0))
-    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius, (255, 255, 255))
-    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius, (0, 0, 0, 0))
+    color = pygame.Color(0)
+    color.hsva = (hue, 100, 100, 100)
+    inner_radius = circle_radius - boundary_thickness
+    
+    # Draw the outer boundary with anti-aliasing
+    for i in range(boundary_thickness):
+        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
+        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
+        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
+        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
+    
+    # Fill the inner part to create a solid boundary effect
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), inner_radius, (0, 0, 0))
 
     # Draw all balls
     for ball in balls:
