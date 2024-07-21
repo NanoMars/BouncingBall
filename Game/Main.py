@@ -69,6 +69,8 @@ class GrowingCircle:
         self.alpha -= self.fade_rate * dt
         # Ensure alpha does not go below zero
         self.alpha = max(self.alpha, 0)
+        
+        self.radius = max(self.radius, 0)
         # Return True if still visible, False if fully transparent
         return self.alpha > 0
 
@@ -96,12 +98,15 @@ class Ball:
         self.velocity *= air_resistance
         self.pos += self.velocity * dt
         self.check_collision_with_boundary(center, circle_radius)
-
+        
         if self.invulnerable:
             self.invulnerable_timer -= dt
             if self.invulnerable_timer <= 0:
                 self.invulnerable = False
-
+                
+        new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -100, self.color, 170, 250)
+        growing_circles.append(new_circle)
+        
     def check_collision_with_boundary(self, center, circle_radius):
         to_center = self.pos - center
         distance_to_center = np.linalg.norm(to_center)
@@ -176,7 +181,7 @@ while running:
     check_ball_collisions()
 
     # Update all growing circles and filter out the transparent ones
-    growing_circles = [circle for circle in growing_circles if circle.update(dt)]
+    growing_circles = [circle for circle in growing_circles if circle.update(dt) and circle.radius > 0]
     
     # Clear screen
     screen.fill((0, 0, 0))
@@ -193,14 +198,15 @@ while running:
     
     # Fill the inner part to create a solid boundary effect
     pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), inner_radius, (0, 0, 0))
-
+    
+    # Draw all growing circles
+    for circle in growing_circles:
+        circle.draw(screen)
     # Draw all balls
     for ball in balls:
         ball.draw(screen)
 
-    # Draw all growing circles
-    for circle in growing_circles:
-        circle.draw(screen)
+    
 
     pygame.display.flip()
 
