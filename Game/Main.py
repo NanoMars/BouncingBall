@@ -92,6 +92,7 @@ class Ball:
         self.invulnerable = True
         self.invulnerable_timer = 999999999  # 0.25 seconds of invulnerability
         self.has_bounced = False
+        self.collision_points = []  # Track collision points
 
     def update(self, dt, center, circle_radius):
         self.velocity += gravity * dt
@@ -117,17 +118,21 @@ class Ball:
             self.on_collision()
 
     def on_collision(self):
-        new_ball = Ball(center[0], center[1], ball_size, (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)), get_random_velocity())
-        new_ball.invulnerable_timer = 0.25  # Ensure the new ball is invulnerable for a short period
-        balls.append(new_ball)
+        self.collision_points.append(self.pos.copy())  # Store collision point
         new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, 10, self.color)
         growing_circles.append(new_circle)
         play_next_sound_slice()
 
     def draw(self, screen):
+        # Draw lines connecting collision points
+        if len(self.collision_points) > 1:
+            pygame.draw.lines(screen, self.color, False, [(int(point[0]), int(point[1])) for point in self.collision_points], 2)
+        # Draw line from the last collision point to the current position
+        if len(self.collision_points) > 0:
+            pygame.draw.line(screen, self.color, self.collision_points[-1], self.pos, 2)
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
         pygame.gfxdraw.aacircle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
-        pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), int((4 * self.radius) / 5), (0,0,0))
+        pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), int((4 * self.radius) / 5), (0, 0, 0))
 
 def get_random_velocity():
     angle = random.uniform(0, 2 * np.pi)
