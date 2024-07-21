@@ -47,7 +47,7 @@ def play_next_sound_slice():
 
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
-air_resistance = 1.001  # Air resistance coefficient (1 means no air resistance)
+air_resistance = 1.000  # Air resistance coefficient (1 means no air resistance)
 ball_size = 100
 boundary_thickness = 10
 
@@ -82,6 +82,8 @@ class GrowingCircle:
         # pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_with_alpha)
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
 
+import pygame.gfxdraw  # Ensure this is imported at the top
+
 class Ball:
     def __init__(self, x, y, size, color, velocity):
         self.pos = np.array([x, y], dtype='float64')
@@ -93,6 +95,7 @@ class Ball:
         self.invulnerable_timer = 999999999  # 0.25 seconds of invulnerability
         self.has_bounced = False
         self.collision_points = []  # Track collision points
+        self.line_opacities = []  # Track opacities of lines from collision points
 
     def update(self, dt, center, circle_radius):
         self.velocity += gravity * dt
@@ -108,6 +111,10 @@ class Ball:
         new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -100, self.color, 170, 250)
         growing_circles.append(new_circle)
         
+        # Reduce opacity over time
+        for i in range(len(self.line_opacities)):
+            self.line_opacities[i] = max(self.line_opacities[i] - dt * 255, 90)  # Reduce opacity
+
     def check_collision_with_boundary(self, center, circle_radius):
         to_center = self.pos - center
         distance_to_center = np.linalg.norm(to_center)
@@ -119,15 +126,22 @@ class Ball:
             self.on_collision(collision_point)
 
     def on_collision(self, collision_point):
-        self.collision_points.append(collision_point)  # Store exact collision point
-        new_circle = GrowingCircle(collision_point[0], collision_point[1], self.radius, 10, self.color)
-        growing_circles.append(new_circle)
-        play_next_sound_slice()
+            self.collision_points.append(collision_point)  # Store exact collision point
+            self.line_opacities.append(255)  # Set initial opacity to 100%
+
+            # Set all lines' transparency to 100%
+            for i in range(len(self.line_opacities)):
+                self.line_opacities[i] = 255
+
+            new_circle = GrowingCircle(collision_point[0], collision_point[1], self.radius, 10, self.color)
+            growing_circles.append(new_circle)
+            play_next_sound_slice()
 
     def draw(self, screen):
-        # Draw lines from all collision points to the current position
-        for point in self.collision_points:
-            pygame.draw.line(screen, self.color, (int(point[0]), int(point[1])), (int(self.pos[0]), int(self.pos[1])), 2)
+        # Draw lines from all collision points to the current position using anti-aliased lines
+        for idx, point in enumerate(self.collision_points):
+            color_with_opacity = (*self.color, int(self.line_opacities[idx]))
+            pygame.gfxdraw.line(screen, int(point[0]), int(point[1]), int(self.pos[0]), int(self.pos[1]), color_with_opacity)
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
         pygame.gfxdraw.aacircle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), int((4 * self.radius) / 5), (0, 0, 0))
@@ -192,6 +206,13 @@ while running:
     color.hsva = (hue, 100, 100, 100)
     inner_radius = circle_radius - boundary_thickness
     
+    # Draw all growing circles
+    for circle in growing_circles:
+        circle.draw(screen)
+    # Draw all balls
+    for ball in balls:
+        ball.draw(screen)
+    
     # Draw the outer boundary with anti-aliasing
     for i in range(boundary_thickness):
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
@@ -199,15 +220,9 @@ while running:
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
     
-    # Fill the inner part to create a solid boundary effect
-    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), inner_radius, (0, 0, 0))
+    # Draw a thick black circle around the boundary to hide anything outside
+
     
-    # Draw all growing circles
-    for circle in growing_circles:
-        circle.draw(screen)
-    # Draw all balls
-    for ball in balls:
-        ball.draw(screen)
 
     
 
