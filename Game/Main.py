@@ -113,23 +113,21 @@ class Ball:
         distance_to_center = np.linalg.norm(to_center)
         if distance_to_center + self.radius > circle_radius - boundary_thickness / 2:
             normal = to_center / distance_to_center
+            collision_point = center + normal * (circle_radius - boundary_thickness / 2)
             self.velocity -= 2 * np.dot(self.velocity, normal) * normal
             self.pos = center + normal * (circle_radius - boundary_thickness / 2 - self.radius)
-            self.on_collision()
+            self.on_collision(collision_point)
 
-    def on_collision(self):
-        self.collision_points.append(self.pos.copy())  # Store collision point
-        new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, 10, self.color)
+    def on_collision(self, collision_point):
+        self.collision_points.append(collision_point)  # Store exact collision point
+        new_circle = GrowingCircle(collision_point[0], collision_point[1], self.radius, 10, self.color)
         growing_circles.append(new_circle)
         play_next_sound_slice()
 
     def draw(self, screen):
-        # Draw lines connecting collision points
-        if len(self.collision_points) > 1:
-            pygame.draw.lines(screen, self.color, False, [(int(point[0]), int(point[1])) for point in self.collision_points], 2)
-        # Draw line from the last collision point to the current position
-        if len(self.collision_points) > 0:
-            pygame.draw.line(screen, self.color, self.collision_points[-1], self.pos, 2)
+        # Draw lines from all collision points to the current position
+        for point in self.collision_points:
+            pygame.draw.line(screen, self.color, (int(point[0]), int(point[1])), (int(self.pos[0]), int(self.pos[1])), 2)
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
         pygame.gfxdraw.aacircle(screen, int(self.pos[0]), int(self.pos[1]), self.radius, self.color)
         pygame.gfxdraw.filled_circle(screen, int(self.pos[0]), int(self.pos[1]), int((4 * self.radius) / 5), (0, 0, 0))
