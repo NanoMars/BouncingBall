@@ -5,12 +5,11 @@ import numpy as np
 import random
 import time
 import pygame.gfxdraw
-import pygame.midi
+import pygame.sndarray
+from pygame import midi
 import mido
 
-
 # Initialize Pygame
-pygame.midi.init()
 pygame.init()
 screen_width = 720
 screen_height = 720
@@ -19,35 +18,71 @@ pygame.display.set_caption("Ball Bouncing Inside a Circle")
 clock = pygame.time.Clock()
 framerate = 60
 
-# Initialize Pygame MIDI
-pygame.midi.init()
-
-# Load MIDI file
 midi_folder = os.path.join(os.path.dirname(__file__), 'MIDI')
-midi_file = [f for f in os.listdir(midi_folder) if f.endswith('.mid')][0]
-midi_path = os.path.join(midi_folder, midi_file)
-midi = mido.MidiFile(midi_path)
+midi_files = [f for f in os.listdir(midi_folder) if f.endswith('.mid')]
+midi_path = os.path.join(midi_folder, midi_files[0])
 
-# MIDI playback variables
-current_note_index = 0
+mid = mido.MidiFile(midi_path)
+
 midi_notes = []
+for msg in mid:
+    if not msg.is_meta:
+        if msg.type == 'note_on' or msg.type == 'note_off':
+            midi_notes.append(msg)
 
-# Extract notes from the MIDI file
-for track in midi.tracks:
-    for msg in track:
-        if msg.type == 'note_on':
-            midi_notes.append((msg.note, msg.velocity))
+# Initialize Pygame mixer
+pygame.mixer.init()
+pygame.midi.init()
+#midi_out = pygame.midi.Output(0)
 
-# Function to play the next MIDI notes
+# Load sound
+sound_folder = os.path.join(os.path.dirname(__file__), 'Sounds')
+sound_file = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')][0]
+sound_path = os.path.join(sound_folder, sound_file)
+sound = pygame.mixer.Sound(sound_path)
+
+# Sound slicing variables
+sound_array = pygame.sndarray.array(sound)
+sound_length = sound.get_length()
+hue = 0
+slice_length = 0.5  # 0.5 second
+num_slices = int(sound_length / slice_length)
+current_slice_index = 0
+sample_rate = sound_array.shape[0] / sound_length
+
+# Calculate the number of samples per slice
+samples_per_slice = int(slice_length * sample_rate)
+
+current_midi_index = 0
+currently_playing_sounds = []
+
 def play_next_midi_notes():
-    global current_note_index
-    if current_note_index < len(midi_notes):
-        note, velocity = midi_notes[current_note_index]
-        midi_out.note_on(note, velocity)
-        current_note_index += 1
-    else:
-        current_note_index = 0
+    global current_midi_index
+    global currently_playing_sounds
 
+    if current_midi_index >= len(midi_notes):
+        current_midi_index = 0
+
+    notes_to_play = []
+    while current_midi_index < len(midi_notes):
+        msg = midi_notes[current_midi_index]
+        if msg.type == 'note_on':
+            freq = 440.0 * (2.0 ** ((msg.note - 69) / 12.0))
+            duration = int(44100 * msg.time) if msg.time > 0 else 44100
+            samples = (np.sin(2 * np.pi * np.arange(duration) * freq / 44100)).astype(np.float32)
+            samples_stereo = np.column_stack((samples, samples))
+            sound = pygame.sndarray.make_sound((samples_stereo * 32767).astype(np.int16))
+            notes_to_play.append(sound)
+        elif msg.type == 'note_off':
+            pass
+        current_midi_index += 1
+
+        if len(notes_to_play) > 0 and (current_midi_index >= len(midi_notes) or midi_notes[current_midi_index].time > 0):
+            break
+
+    for sound in notes_to_play:
+        sound.play()
+        currently_playing_sounds.append(sound)
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
 air_resistance = 1.000  # Air resistance coefficient (1 means no air resistance)
@@ -96,7 +131,6 @@ class GrowingCircle:
         
         # Blit the surface onto the screen
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
-
 class Ball:
     def __init__(self, x, y, size, color, velocity):
         self.pos = np.array([x, y], dtype='float64')
@@ -137,17 +171,18 @@ class Ball:
             self.velocity -= 2 * np.dot(self.velocity, normal) * normal
             self.pos = center + normal * (circle_radius - boundary_thickness / 2 - self.radius)
             self.on_collision(collision_point)
-
+            
     def on_collision(self, collision_point):
-        self.collision_points.append(collision_point)  # Store exact collision point
-        self.line_opacities.append(255)  # Set initial opacity to 100%
+        self.collision_points.append(collision_point)
+        self.line_opacities.append(255)
 
-        # Set all lines' transparency to 100%
         for i in range(len(self.line_opacities)):
             self.line_opacities[i] = 255
 
         new_circle = GrowingCircle(collision_point[0], collision_point[1], self.radius, 10, self.color)
         growing_circles.append(new_circle)
+        
+        # Play next set of MIDI notes on collision
         play_next_midi_notes()
 
     def draw(self, screen):
@@ -166,43 +201,6 @@ class Ball:
         
         # Blit the surface onto the main screen
         screen.blit(surface, (0, 0))
-
-
-
-
-# List available MIDI devices
-def list_midi_devices():
-    for i in range(pygame.midi.get_count()):
-        info = pygame.midi.get_device_info(i)
-        print(i, info)
-
-# List available MIDI devices
-def list_midi_devices():
-    for i in range(pygame.midi.get_count()):
-        info = pygame.midi.get_device_info(i)
-        print(i, info)
-
-# Print available MIDI devices to the console
-print("Available MIDI devices:")
-list_midi_devices()
-
-# Attempt to get the default MIDI output ID
-try:
-    default_output_id = pygame.midi.get_default_output_id()
-    if default_output_id == -1:
-        raise pygame.midi.MidiException("No default MIDI output device found.")
-    midi_out = pygame.midi.Output(default_output_id)
-except pygame.midi.MidiException as e:
-    print(f"Error initializing default MIDI output: {e}")
-    # Fall back to manual selection
-    available_devices = [i for i in range(pygame.midi.get_count()) if pygame.midi.get_device_info(i)[3] == 1]
-    if not available_devices:
-        print("No MIDI output devices available.")
-        sys.exit(1)
-    # Select the first available MIDI output device
-    selected_device = available_devices[0]
-    print(f"Using available MIDI device: {pygame.midi.get_device_info(selected_device)}")
-    midi_out = pygame.midi.Output(selected_device)
 
 def get_random_velocity():
     angle = random.uniform(0, 2 * np.pi)
@@ -245,11 +243,12 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_d:
-            new_ball = Ball(center[0], center[1], ball_size,
-            get_random_color(),
-            get_random_velocity())
+            new_ball = Ball(center[0], center[1], ball_size, 
+                            get_random_color(), 
+                            get_random_velocity())
             balls.append(new_ball)
-        # Update all balls
+
+    # Update all balls
     for ball in balls:
         ball.update(dt, center, circle_radius)
 
@@ -257,29 +256,34 @@ while running:
 
     # Update all growing circles and filter out the transparent ones
     growing_circles = [circle for circle in growing_circles if circle.update(dt) and circle.radius > 0]
-
+    
     # Clear screen
     screen.fill((0, 0, 0))
     color = pygame.Color(0)
     color.hsva = (hue, 100, 100, 100)
     inner_radius = circle_radius - boundary_thickness
-
+    
     # Draw all growing circles
     for circle in growing_circles:
         circle.draw(screen)
     # Draw all balls
     for ball in balls:
         ball.draw(screen)
-
+    
     # Draw the outer boundary with anti-aliasing
     for i in range(boundary_thickness):
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
+    
+    # Draw a thick black circle around the boundary to hide anything outside
+
+    
+
+    
 
     pygame.display.flip()
-midi_out.close()
-pygame.midi.quit()
+
 pygame.quit()
 sys.exit()
