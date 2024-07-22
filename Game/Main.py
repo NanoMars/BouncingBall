@@ -56,6 +56,22 @@ samples_per_slice = int(slice_length * sample_rate)
 current_midi_index = 0
 currently_playing_sounds = []
 
+def adsr_envelope(t, attack, decay, sustain, release):
+    total_samples = len(t)
+    attack_samples = min(int(attack * 44100), total_samples)
+    decay_samples = min(int(decay * 44100), total_samples - attack_samples)
+    release_samples = min(int(release * 44100), total_samples - attack_samples - decay_samples)
+    sustain_samples = total_samples - (attack_samples + decay_samples + release_samples)
+
+    env = np.zeros(total_samples)
+    env[:attack_samples] = np.linspace(0, 1, attack_samples)
+    env[attack_samples:attack_samples + decay_samples] = np.linspace(1, sustain, decay_samples)
+    if sustain_samples > 0:
+        env[attack_samples + decay_samples:attack_samples + decay_samples + sustain_samples] = sustain
+    env[-release_samples:] = np.linspace(sustain, 0, release_samples)
+
+    return env
+
 def play_next_midi_notes():
     global current_midi_index
     global currently_playing_sounds
@@ -69,8 +85,19 @@ def play_next_midi_notes():
         if msg.type == 'note_on':
             freq = 440.0 * (2.0 ** ((msg.note - 69) / 12.0))
             duration = int(44100 * msg.time) if msg.time > 0 else 44100
-            samples = (np.sin(2 * np.pi * np.arange(duration) * freq / 44100)).astype(np.float32)
+            t = np.arange(duration) / 44100.0
+            samples = np.sin(2 * np.pi * freq * t).astype(np.float32)
+
+            # Apply ADSR envelope
+            attack = 0.01
+            decay = 0.1
+            sustain = 0.7
+            release = 0.2
+            envelope = adsr_envelope(t, attack, decay, sustain, release)
+            samples *= envelope
+
             samples_stereo = np.column_stack((samples, samples))
+            samples_stereo *= 0.0125  # Normalize the amplitude
             sound = pygame.sndarray.make_sound((samples_stereo * 32767).astype(np.int16))
             notes_to_play.append(sound)
         elif msg.type == 'note_off':
@@ -85,51 +112,37 @@ def play_next_midi_notes():
         currently_playing_sounds.append(sound)
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
-air_resistance = 1.000  # Air resistance coefficient (1 means no air resistance)
+air_resistance = 0.9995  # Air resistance coefficient (1 means no air resistance)
 ball_size = 100
 boundary_thickness = 10
 
 growing_circles = []
 
 class GrowingCircle:
-    def __init__(self, x, y, initial_radius, growth_rate, color, initial_alpha=255, fade_rate=255):
+    def __init__(self, x, y, initial_radius, growth_rate, color, initial_alpha=255, fade_rate=255, layer=1):
         self.pos = np.array([x, y], dtype='float64')
         self.radius = initial_radius
         self.growth_rate = growth_rate
         self.color = color
         self.alpha = initial_alpha
         self.fade_rate = fade_rate  # Rate at which the alpha decreases
+        self.layer = layer
         
-        # Debugging: print the initial color values to verify
         print("Initial color:", self.color)
         
     def update(self, dt):
-        # Increase the radius based on the growth rate
         self.radius += self.growth_rate * dt
-        # Decrease the alpha based on the fade rate
         self.alpha -= self.fade_rate * dt
-        # Ensure alpha does not go below zero
         self.alpha = max(self.alpha, 0)
-        
         self.radius = max(self.radius, 0)
-        # Return True if still visible, False if fully transparent
         return self.alpha > 0
 
     def draw(self, screen):
-        # Create a surface with alpha
         surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         surface = surface.convert_alpha()
-        
-        # Ensure the color is a tuple with three values (RGB)
         color_without_alpha = self.color[:3]
-        
-        # Draw the filled circle with the color (without alpha)
         pygame.gfxdraw.filled_circle(surface, int(self.radius), int(self.radius), int(self.radius), color_without_alpha)
-        
-        # Apply alpha value
         surface.set_alpha(int(self.alpha))
-        
-        # Blit the surface onto the screen
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
 class Ball:
     def __init__(self, x, y, size, color, velocity):
@@ -155,7 +168,7 @@ class Ball:
             if self.invulnerable_timer <= 0:
                 self.invulnerable = False
                 
-        new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -100, self.color, 170, 250)
+        new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -140, self.color, 70, 200)
         growing_circles.append(new_circle)
         
         # Reduce opacity over time
@@ -173,17 +186,20 @@ class Ball:
             self.on_collision(collision_point)
             
     def on_collision(self, collision_point):
-        self.collision_points.append(collision_point)
-        self.line_opacities.append(255)
+            self.collision_points.append(collision_point)
+            self.line_opacities.append(255)
 
-        for i in range(len(self.line_opacities)):
-            self.line_opacities[i] = 255
+            for i in range(len(self.line_opacities)):
+                self.line_opacities[i] = 255
 
-        new_circle = GrowingCircle(collision_point[0], collision_point[1], self.radius, 10, self.color)
-        growing_circles.append(new_circle)
-        
-        # Play next set of MIDI notes on collision
-        play_next_midi_notes()
+            new_circle = GrowingCircle(collision_point[0], collision_point[1], 25, 10, self.color)
+            growing_circles.append(new_circle)
+            
+            # Add a background growing circle
+            background_circle = GrowingCircle(center[0], center[1], circle_radius + (boundary_thickness / 2), 25, self.color, layer=0)
+            growing_circles.append(background_circle)
+            
+            play_next_midi_notes()
 
     def draw(self, screen):
         # Create a surface for drawing with alpha channel
@@ -248,41 +264,43 @@ while running:
                             get_random_velocity())
             balls.append(new_ball)
 
-    # Update all balls
     for ball in balls:
         ball.update(dt, center, circle_radius)
 
     check_ball_collisions()
 
-    # Update all growing circles and filter out the transparent ones
     growing_circles = [circle for circle in growing_circles if circle.update(dt) and circle.radius > 0]
-    
-    # Clear screen
+
     screen.fill((0, 0, 0))
+    
+    # Draw a black circle at the center
+
+    # Draw the background growing circles
+    for circle in sorted(growing_circles, key=lambda c: c.layer):
+        if circle.layer == 0:
+            circle.draw(screen)
+            
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
+
+
     color = pygame.Color(0)
     color.hsva = (hue, 100, 100, 100)
     inner_radius = circle_radius - boundary_thickness
     
-    # Draw all growing circles
+    # Draw all other growing circles
     for circle in growing_circles:
-        circle.draw(screen)
-    # Draw all balls
+        if circle.layer != 0:
+            circle.draw(screen)
+            
     for ball in balls:
         ball.draw(screen)
     
-    # Draw the outer boundary with anti-aliasing
     for i in range(boundary_thickness):
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
         pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
     
-    # Draw a thick black circle around the boundary to hide anything outside
-
-    
-
-    
-
     pygame.display.flip()
 
 pygame.quit()

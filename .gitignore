@@ -1,4 +1,6 @@
-# Ignore all sound files
+
+# MP3 files
+*.mid
 
 # MP3 files
 *.mp3
