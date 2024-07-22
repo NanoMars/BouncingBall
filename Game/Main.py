@@ -45,13 +45,13 @@ sound = pygame.mixer.Sound(sound_path)
 sound_array = pygame.sndarray.array(sound)
 sound_length = sound.get_length()
 hue = 0
-slice_length = 0.5  # 0.5 second
-num_slices = int(sound_length / slice_length)
-current_slice_index = 0
 sample_rate = sound_array.shape[0] / sound_length
 
-# Calculate the number of samples per slice
-samples_per_slice = int(slice_length * sample_rate)
+show_lines = True
+show_trail = True
+change_hue = True
+show_background_growing_circle = True
+show_collision_growing_circle = True
 
 current_midi_index = 0
 currently_playing_sounds = []
@@ -168,8 +168,9 @@ class Ball:
             if self.invulnerable_timer <= 0:
                 self.invulnerable = False
                 
-        new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -140, self.color, 70, 200)
-        growing_circles.append(new_circle)
+        if show_trail:
+            new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -140, self.color, 70, 200)
+            growing_circles.append(new_circle)
         
         # Reduce opacity over time
         for i in range(len(self.line_opacities)):
@@ -186,36 +187,32 @@ class Ball:
             self.on_collision(collision_point)
             
     def on_collision(self, collision_point):
+        if show_lines:
             self.collision_points.append(collision_point)
             self.line_opacities.append(255)
 
-            for i in range(len(self.line_opacities)):
-                self.line_opacities[i] = 255
-
+        if show_collision_growing_circle:
             new_circle = GrowingCircle(collision_point[0], collision_point[1], 25, 10, self.color)
             growing_circles.append(new_circle)
-            
-            # Add a background growing circle
+        
+        if show_background_growing_circle:
             background_circle = GrowingCircle(center[0], center[1], circle_radius + (boundary_thickness / 2), 25, self.color, layer=0)
             growing_circles.append(background_circle)
-            
-            play_next_midi_notes()
+        
+        play_next_midi_notes()
 
     def draw(self, screen):
-        # Create a surface for drawing with alpha channel
         surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
         
-        # Draw lines from all collision points to the current position using anti-aliased lines
-        for idx, point in enumerate(self.collision_points):
-            color_with_opacity = (*self.color[:3], int(self.line_opacities[idx]))  # Ensure it's an RGBA tuple
-            pygame.draw.line(surface, color_with_opacity, (int(point[0]), int(point[1])), (int(self.pos[0]), int(self.pos[1])), 1)
+        if show_lines:
+            for idx, point in enumerate(self.collision_points):
+                color_with_opacity = (*self.color[:3], int(self.line_opacities[idx]))  # Ensure it's an RGBA tuple
+                pygame.draw.line(surface, color_with_opacity, (int(point[0]), int(point[1])), (int(self.pos[0]), int(self.pos[1])), 1)
         
-        # Draw the ball on the surface
         pygame.draw.circle(surface, self.color, (int(self.pos[0]), int(self.pos[1])), self.radius)
         pygame.draw.circle(surface, self.color, (int(self.pos[0]), int(self.pos[1])), self.radius, 1)
         pygame.draw.circle(surface, (0, 0, 0), (int(self.pos[0]), int(self.pos[1])), int((4 * self.radius) / 5))
         
-        # Blit the surface onto the main screen
         screen.blit(surface, (0, 0))
 
 def get_random_velocity():
@@ -254,15 +251,30 @@ balls = []  # Initialize an empty list for balls
 running = True
 while running:
     dt = clock.tick(framerate) / 1000.0
-    hue = (hue + dt * 10) % 360
+    if change_hue:
+        hue = (hue + dt * 10) % 360
+        color = pygame.Color(0)
+        color.hsva = (hue, 100, 100, 100)
+    else:
+        color = pygame.Color(255, 255, 255)
+    
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        elif event.type == pygame.KEYDOWN and event.key == pygame.K_d:
-            new_ball = Ball(center[0], center[1], ball_size, 
-                            get_random_color(), 
-                            get_random_velocity())
-            balls.append(new_ball)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                new_ball = Ball(center[0], center[1], ball_size, get_random_color(), get_random_velocity())
+                balls.append(new_ball)
+            elif event.key == pygame.K_1:
+                show_lines = not show_lines
+            elif event.key == pygame.K_2:
+                show_trail = not show_trail
+            elif event.key == pygame.K_3:
+                change_hue = not change_hue
+            elif event.key == pygame.K_4:
+                show_background_growing_circle = not show_background_growing_circle
+            elif event.key == pygame.K_5:
+                show_collision_growing_circle = not show_collision_growing_circle
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
@@ -273,18 +285,17 @@ while running:
 
     screen.fill((0, 0, 0))
     
-    # Draw a black circle at the center
-
     # Draw the background growing circles
     for circle in sorted(growing_circles, key=lambda c: c.layer):
         if circle.layer == 0:
             circle.draw(screen)
             
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+    # Draw a black circle at the center
     pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
 
 
-    color = pygame.Color(0)
-    color.hsva = (hue, 100, 100, 100)
+
     inner_radius = circle_radius - boundary_thickness
     
     # Draw all other growing circles
@@ -295,13 +306,6 @@ while running:
     for ball in balls:
         ball.draw(screen)
     
-    for i in range(boundary_thickness):
-        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
-        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
-        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
-        pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - i, color)
+
     
     pygame.display.flip()
-
-pygame.quit()
-sys.exit()
