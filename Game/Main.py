@@ -70,6 +70,8 @@ dragging = False
 drag_offset = pygame.Vector2(0, 0)
 selected_modifier = None
 expanded_modifier = None
+click_processed = False  # Initialize click_processed flag
+
 
 current_midi_index = 0
 currently_playing_sounds = []
@@ -141,7 +143,7 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
     title_width = title_text.get_width()
     button_width = 80
     title_and_buttons_width = title_width + button_width + 20
-    max_item_width = max(font.size(name)[0] for name in modifiers.keys()) + 100
+    max_item_width = max(font.size(name.replace('_', ' '))[0] for name in modifiers.keys()) + 100
     menu_width = max(title_and_buttons_width, max_item_width)
     
     menu_rect = pygame.Rect(menu_position.x, menu_position.y, menu_width, 620)
@@ -178,7 +180,7 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
     buffer = 10
 
     for i, (name, data) in enumerate(modifiers.items()):
-        name = sanitize_name(name)
+        name = sanitize_name(name).replace('_', ' ')
         is_selected = name in selected_modifiers
         background_color = (0, 255, 0, 128) if is_selected else (50, 50, 50, 0)
 
@@ -194,7 +196,7 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
             screen.blit(text_surface, (menu_rect.x + 20 + buffer, menu_rect.y + y_offset))
 
         triangle_color = (255, 255, 255)
-        triangle_x = menu_rect.x + text_width + 30
+        triangle_x = menu_rect.x + text_width + 40  # Adjusted value to add gap
         triangle_y = menu_rect.y + y_offset + 10
         triangle_points = [(triangle_x, triangle_y), 
                            (triangle_x + 10, triangle_y + 10), 
@@ -212,7 +214,7 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
 
         if expanded_modifier == name:
             description_y = menu_rect.y + y_offset
-            y_offset = wrap_text(screen, data["description"], menu_rect.x + 40, description_y, menu_width - 80, font) - menu_rect.y
+            y_offset = wrap_text(screen, data["description"], menu_rect.x + 40, description_y, menu_width - 80, font) - menu_rect.y + 10
 
     return menu_rect, header_rect, close_button, minimize_button, item_rects, triangle_rects
 
@@ -239,7 +241,7 @@ def toggle_modifier(modifier, selected_modifiers):
 # Global variables
 menu_position = pygame.Vector2(50, 50)  # Initial position of the menu
 
-def handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset):
+def handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset, click_processed):
     global menu_open, menu_minimized, expanded_modifier, menu_position
     if event.type == pygame.MOUSEBUTTONDOWN:
         if close_button.collidepoint(event.pos):
@@ -249,33 +251,32 @@ def handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_bu
         elif header_rect.collidepoint(event.pos):
             dragging = True
             drag_offset = pygame.Vector2(event.pos) - pygame.Vector2(header_rect.topleft)
-        expanded_modifier = handle_triangle_click(event, menu_rect, modifiers, expanded_modifier)
+        expanded_modifier, click_processed = handle_triangle_click(event, triangle_rects, expanded_modifier, click_processed)
     elif event.type == pygame.MOUSEBUTTONUP:
         dragging = False
         drag_offset = None
-        # Save the new position when dragging stops
         menu_position = pygame.Vector2(header_rect.topleft)
     elif event.type == pygame.MOUSEMOTION:
         if dragging:
             new_pos = pygame.Vector2(event.pos) - drag_offset
             menu_rect.topleft = (int(new_pos.x), int(new_pos.y))
             header_rect.topleft = menu_rect.topleft
-    return dragging, drag_offset
+    return dragging, drag_offset, click_processed
 
-def handle_triangle_click(event, menu_rect, modifiers, expanded_modifier):
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        x, y = event.pos
-        if menu_rect.collidepoint(x, y):
-            rel_x, rel_y = x - menu_rect.x, y - menu_rect.y
-            item_index = (rel_y - 50) // 40
-            if 0 <= item_index < len(modifiers):
-                keys = list(modifiers.keys())
-                clicked_modifier = keys[item_index]
-                if expanded_modifier == clicked_modifier:
+def handle_triangle_click(event, triangle_rects, expanded_modifier, click_processed):
+    if event.type == pygame.MOUSEBUTTONDOWN and not click_processed:
+        for triangle_rect, name in triangle_rects:
+            if triangle_rect.collidepoint(event.pos):
+                print(f"Triangle clicked at: {event.pos} for modifier: {name}")  # Enhanced Debug statement
+                if expanded_modifier == name:
+                    print(f"Collapsing modifier: {name}")  # Debug statement
                     expanded_modifier = None
                 else:
-                    expanded_modifier = clicked_modifier
-    return expanded_modifier
+                    print(f"Expanding modifier: {name}")  # Debug statement
+                    expanded_modifier = name
+                click_processed = True
+                break
+    return expanded_modifier, click_processed
 
 def apply_modifier(event_name, ball):
     if selected_modifier and selected_modifier in modifiers:
@@ -483,7 +484,6 @@ class Ball:
         if show_lines:
             self.collision_points.append(collision_point)
             self.line_opacities.append(255)
-            # Ensure all line opacities are set to 255
             self.line_opacities = [255 for _ in self.line_opacities]
 
         if show_collision_growing_circle:
@@ -495,6 +495,9 @@ class Ball:
             growing_circles.append(background_circle)
         
         play_next_midi_notes()
+
+        # Apply modifier for ball bounce event
+        apply_modifier("ball_bounce", self)
 
     def draw(self, screen):
         surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
@@ -584,16 +587,6 @@ show_trail = True
 show_background_growing_circle = True
 show_collision_growing_circle = True
 
-# Main loop
-running = True
-font = pygame.font.Font(None, 36)
-menu_open = False
-header_rect = pygame.Rect(50, 50, 620, 40)
-
-menu_rect = pygame.Rect(50, 50, 620, 620)
-header_rect = pygame.Rect(50, 50, 620, 40)
-close_button = pygame.Rect(header_rect.right - 30, header_rect.y + 5, 20, 20)
-minimize_button = pygame.Rect(header_rect.right - 60, header_rect.y + 5, 20, 20)
 
 # Main loop
 running = True
@@ -607,9 +600,11 @@ header_rect = pygame.Rect(50, 50, 620, 40)
 close_button = pygame.Rect(header_rect.right - 30, header_rect.y + 5, 20, 20)
 minimize_button = pygame.Rect(header_rect.right - 60, header_rect.y + 5, 20, 20)
 
+
 while running:
     dt = clock.tick(framerate) / 1000.0
-    
+    click_processed = False  # Reset click_processed at the start of each frame
+
     if change_hue:
         hue = (hue + dt * 10) % 360
         color = pygame.Color(0)
@@ -643,14 +638,13 @@ while running:
                 show_collision_growing_circle = not show_collision_growing_circle
                 notification_manager.add_notification(f"Show collision circle turned {'on' if show_collision_growing_circle else 'off'}")
         elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
-            dragging, drag_offset = handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset)
+            dragging, drag_offset, click_processed = handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset, click_processed)
             if event.type == pygame.MOUSEBUTTONDOWN:
                 for item_rect, modifier_name in item_rects:
                     if item_rect.collidepoint(event.pos):
                         toggle_modifier(modifier_name, selected_modifiers)
-                for triangle_rect, modifier_name in triangle_rects:
-                    if triangle_rect.collidepoint(event.pos):
-                        expanded_modifier = modifier_name if expanded_modifier != modifier_name else None
+                        click_processed = True
+                expanded_modifier, click_processed = handle_triangle_click(event, triangle_rects, expanded_modifier, click_processed)
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
@@ -683,5 +677,6 @@ while running:
     notification_manager.update()
     notification_manager.draw(screen)
     pygame.display.flip()
+
 pygame.quit()
 sys.exit()
