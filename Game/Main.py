@@ -82,9 +82,7 @@ def sanitize_name(name):
 def load_modifiers():
     modifiers = {}
     modifiers_folder = os.path.join(os.path.dirname(__file__), 'Modifiers')
-    print(f"Looking for modifiers in: {modifiers_folder}")  # Debug: Print the modifiers folder path
     for filename in os.listdir(modifiers_folder):
-        print(f"Found file: {filename}")  # Debug: Print each found file
         if filename.endswith('.py') and filename != '__init__.py':
             module_name = filename[:-3]
             try:
@@ -94,11 +92,10 @@ def load_modifiers():
                         "function": module.modify,
                         "description": module.__doc__ or "No description available"
                     }
-                    print(f"Loaded modifier: {module_name}")  # Debug: Print loaded modifier
                 else:
-                    print(f"No 'modify' function in {module_name}")  # Debug: Print if 'modify' function is missing
+                    print(f"No 'modify' function in {module_name}")
             except Exception as e:
-                print(f"Error loading {module_name}: {e}")  # Debug: Print any import errors
+                print(f"Error loading {module_name}: {e}")
     return modifiers
 
 modifiers = load_modifiers()
@@ -143,7 +140,7 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
     title_width = title_text.get_width()
     button_width = 80
     title_and_buttons_width = title_width + button_width + 20
-    max_item_width = max(font.size(name.replace('_', ' '))[0] for name in modifiers.keys()) + 100
+    max_item_width = max(font.size(sanitize_name(name).replace('_', ' '))[0] for name in modifiers.keys()) + 100
     menu_width = max(title_and_buttons_width, max_item_width)
     
     menu_rect = pygame.Rect(menu_position.x, menu_position.y, menu_width, 620)
@@ -180,13 +177,13 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
     buffer = 10
 
     for i, (name, data) in enumerate(modifiers.items()):
-        name = sanitize_name(name).replace('_', ' ')
+        display_name = sanitize_name(name).replace('_', ' ')
         is_selected = name in selected_modifiers
         background_color = (0, 255, 0, 128) if is_selected else (50, 50, 50, 0)
 
-        text_surface = font.render(name, True, (255, 255, 255), (0, 0, 0))
+        text_surface = font.render(display_name, True, (255, 255, 255), (0, 0, 0))
         text_surface.set_colorkey((0, 0, 0))
-        text_width, text_height = font.size(name)
+        text_width, text_height = font.size(display_name)
 
         text_width += buffer * 2
         item_rect = pygame.Rect(menu_rect.x + 20, menu_rect.y + y_offset, text_width, 30)
@@ -233,10 +230,12 @@ def handle_modifier_selection(event, modifiers, selected_modifiers):
             print(f"Selected modifiers: {', '.join(selected_modifiers)}")
 
 def toggle_modifier(modifier, selected_modifiers):
-    if modifier in selected_modifiers:
-        selected_modifiers.remove(modifier)
+    sanitized_modifier = sanitize_name(modifier)
+    if sanitized_modifier in selected_modifiers:
+        selected_modifiers.remove(sanitized_modifier)
     else:
-        selected_modifiers.append(modifier)
+        selected_modifiers.append(sanitized_modifier)
+    print(f"Selected modifiers: {selected_modifiers}")  # Debug print
 
 # Global variables
 menu_position = pygame.Vector2(50, 50)  # Initial position of the menu
@@ -279,8 +278,17 @@ def handle_triangle_click(event, triangle_rects, expanded_modifier, click_proces
     return expanded_modifier, click_processed
 
 def apply_modifier(event_name, ball):
-    if selected_modifier and selected_modifier in modifiers:
-        modifiers[selected_modifier](event_name, ball, None)
+    global selected_modifiers
+    print(f"Applying modifiers for event: {event_name}, selected modifiers: {selected_modifiers}")  # Debug print
+    if selected_modifiers:
+        for modifier_name in selected_modifiers:
+            print(f"Checking if {modifier_name} is in modifiers dictionary.")  # Debug print
+            if modifier_name in modifiers:
+                modifier_function = modifiers[modifier_name]["function"]
+                print(f"Calling modifier: {modifier_name} for event: {event_name}")  # Debug print
+                modifier_function(event_name, ball, None)
+            else:
+                print(f"Modifier {modifier_name} not found in the modifiers dictionary.")  # Debug print
 
 def adsr_envelope(t, attack, decay, sustain, release):
     total_samples = len(t)
@@ -439,9 +447,7 @@ class GrowingCircle:
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
 class Ball:
     def __init__(self, x, y, size, color, velocity):
-        self.pos = np.array([x, y], dtype
-
-='float64')
+        self.pos = np.array([x, y], dtype='float64')
         self.size = size
         self.radius = size // 2
         self.color = color
@@ -497,7 +503,9 @@ class Ball:
         play_next_midi_notes()
 
         # Apply modifier for ball bounce event
+        print(f"Collision detected at {collision_point}. Applying 'ball_bounce' modifier.")  # Debug print
         apply_modifier("ball_bounce", self)
+        print(f"Ball size after bounce: {self.size}, Ball radius: {self.radius}")  # Debug print
 
     def draw(self, screen):
         surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
