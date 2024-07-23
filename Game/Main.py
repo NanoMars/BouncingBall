@@ -15,7 +15,7 @@ import mido
 pygame.init()
 screen_width = 720
 screen_height = 720
-screen = pygame.display.set_mode((screen_width, screen_height))
+screen = pygame.display.set_mode((screen_width, screen_height), pygame.SRCALPHA)
 pygame.display.set_caption("Ball Bouncing Inside a Circle")
 clock = pygame.time.Clock()
 framerate = 60
@@ -53,7 +53,7 @@ else:
     sound_length = 1
     sample_rate = 1
 
-# Sound slicing variables
+color = (255, 255, 255)
 hue = 0
 
 show_lines = True
@@ -61,6 +61,13 @@ show_trail = True
 change_hue = True
 show_background_growing_circle = True
 show_collision_growing_circle = True
+
+# Variables for GUI
+menu_open = False
+dragging = False
+drag_offset = pygame.math.Vector2(0, 0)
+selected_modifier = None
+expanded_modifier = None
 
 current_midi_index = 0
 currently_playing_sounds = []
@@ -76,7 +83,10 @@ def load_modifiers():
             try:
                 module = importlib.import_module(f'Modifiers.{module_name}')
                 if hasattr(module, 'modify'):
-                    modifiers[module_name] = module.modify
+                    modifiers[module_name] = {
+                        "function": module.modify,
+                        "description": module.__doc__ or "No description available"
+                    }
                     print(f"Loaded modifier: {module_name}")  # Debug: Print loaded modifier
                 else:
                     print(f"No 'modify' function in {module_name}")  # Debug: Print if 'modify' function is missing
@@ -87,26 +97,105 @@ def load_modifiers():
 modifiers = load_modifiers()
 selected_modifier = list(modifiers.keys())[0] if modifiers else None
 
-def draw_modifier_menu(screen, font, modifiers):
-    screen.fill((50, 50, 50))
-    y_offset = 100
-    for i, (name, func) in enumerate(modifiers.items()):
-        color = (255, 0, 0) if selected_modifier == name else (255, 255, 255)
-        text_surface = font.render(name, True, color)
-        print(f"Drawing {name} at position {100, y_offset + i * 40}")  # Debug: Print drawing positions
-        screen.blit(text_surface, (100, y_offset + i * 40))
+def draw_modifier_menu(screen, font, modifiers, selected_modifier, expanded_modifier, dragging, drag_offset):
+    menu_rect = pygame.Rect(50, 50, 620, 620)
+    header_rect = pygame.Rect(50, 50, 620, 40)
+
+    if dragging:
+        menu_rect.topleft = pygame.mouse.get_pos() - drag_offset
+        header_rect.topleft = menu_rect.topleft
+
+    pygame.draw.rect(screen, (100, 100, 100, 200), menu_rect)
+    pygame.draw.rect(screen, (150, 150, 150, 200), header_rect)
+
+    header_text = font.render("Modifiers", True, (255, 255, 255))
+    screen.blit(header_text, (header_rect.x + 10, header_rect.y + 10))
+
+    # Add close (X) and minimize (-) buttons
+    close_button = pygame.Rect(header_rect.right - 30, header_rect.y + 5, 20, 20)
+    minimize_button = pygame.Rect(header_rect.right - 60, header_rect.y + 5, 20, 20)
+    pygame.draw.rect(screen, (0, 0, 0), close_button)  # Changed to black
+    pygame.draw.rect(screen, (0, 0, 0), minimize_button)  # Changed to black
+    close_text = font.render("X", True, (255, 255, 255))
+    minimize_text = font.render("-", True, (255, 255, 255))
+    screen.blit(close_text, (close_button.x + 5, close_button.y))
+    screen.blit(minimize_text, (minimize_button.x + 5, minimize_button.y))
+
+    y_offset = header_rect.height + 10
+
+    for I, (name, data) in enumerate(modifiers.items()):
+        background_color = (0, 255, 0, 128) if selected_modifier == name else (50, 50, 50, 128)
+        text_surface = font.render(name, True, (255, 255, 255))
+        text_width = text_surface.get_width() + 20  # Add buffer to text width
+        item_rect = pygame.Rect(menu_rect.x + 20, menu_rect.y + y_offset + I * 40, text_width, 30)
+        pygame.draw.rect(screen, background_color, item_rect)
+        screen.blit(text_surface, (menu_rect.x + 20, menu_rect.y + y_offset + I * 40))
+
+        # Draw dropdown triangle
+        triangle_color = (255, 255, 255)
+        triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + I * 40 + 10), 
+                           (menu_rect.x + text_width + 40, menu_rect.y + y_offset + I * 40 + 20), 
+                           (menu_rect.x + text_width + 20, menu_rect.y + y_offset + I * 40 + 20)]
+        if expanded_modifier == name:
+            triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + I * 40 + 20), 
+                               (menu_rect.x + text_width + 40, menu_rect.y + y_offset + I * 40 + 10), 
+                               (menu_rect.x + text_width + 20, menu_rect.y + y_offset + I * 40 + 10)]
+        pygame.draw.polygon(screen, triangle_color, triangle_points)
+
+        # Draw description if dropdown is open
+        if expanded_modifier == name:
+            description_surface = font.render(data["description"], True, (255, 255, 255))
+            screen.blit(description_surface, (menu_rect.x + 40, menu_rect.y + y_offset + I * 40 + 30))
+
+    return menu_rect, header_rect, close_button, minimize_button
 
 def handle_modifier_selection(event, modifiers):
     global selected_modifier
     keys = list(modifiers.keys())
-    if not selected_modifier and keys:
-        selected_modifier = keys[0]
     if event.key == pygame.K_UP:
         selected_modifier = keys[(keys.index(selected_modifier) - 1) % len(keys)]
     elif event.key == pygame.K_DOWN:
         selected_modifier = keys[(keys.index(selected_modifier) + 1) % len(keys)]
     elif event.key == pygame.K_RETURN:
         print(f"Selected modifier: {selected_modifier}")
+
+def handle_mouse_events(event, header_rect, dragging, drag_offset):
+    if event.type == pygame.MOUSEBUTTONDOWN:
+        if header_rect.collidepoint(event.pos):
+            dragging = True
+            drag_offset = pygame.Vector2(event.pos) - pygame.Vector2(header_rect.topleft)
+    elif event.type == pygame.MOUSEBUTTONUP:
+        dragging = False
+        drag_offset = None
+    elif event.type == pygame.MOUSEMOTION:
+        if dragging:
+            new_pos = pygame.Vector2(event.pos) - drag_offset
+            header_rect.topleft = (int(new_pos.x), int(new_pos.y))
+    return dragging, drag_offset
+
+def handle_triangle_click(event, menu_rect, modifiers, expanded_modifier):
+    if event.type == pygame.MOUSEBUTTONDOWN:
+        x, y = event.pos
+        if menu_rect.collidepoint(x, y):
+            rel_x, rel_y = x - menu_rect.x, y - menu_rect.y
+            item_index = (rel_y - 50) // 40
+            if 0 <= item_index < len(modifiers):
+                keys = list(modifiers.keys())
+                clicked_modifier = keys[item_index]
+                if expanded_modifier == clicked_modifier:
+                    expanded_modifier = None
+                else:
+                    expanded_modifier = clicked_modifier
+    return expanded_modifier
+
+def handle_mouse_events(event, header_rect, dragging, drag_offset):
+    if event.type == pygame.MOUSEBUTTONDOWN:
+        if header_rect.collidepoint(event.pos):
+            dragging = True
+            drag_offset = event.pos - header_rect.topleft
+    elif event.type == pygame.MOUSEBUTTONUP:
+        dragging = False
+    return dragging, drag_offset
 
 def apply_modifier(event_name, ball):
     if selected_modifier and selected_modifier in modifiers:
@@ -398,82 +487,105 @@ if midi_files:
 else:
     notification_manager.add_notification("No MIDI file found")
 
+selected_modifier = list(modifiers.keys())[0] if modifiers else None
+dragging = False
+drag_offset = pygame.math.Vector2(0, 0)
+
 running = True
 font = pygame.font.Font(None, 36)
 menu_open = False
 
-modifiers = load_modifiers()
-print(modifiers)  # Debug: Print the loaded modifiers
-selected_modifier = list(modifiers.keys())[0] if modifiers else None
-print(selected_modifier)  # Debug: Print the selected modifier
+# Initialize color and hue
+hue = 0
+change_hue = True  # Variable to toggle hue-changing
+
+# Toggle features
+show_lines = True
+show_trail = True
+show_background_growing_circle = True
+show_collision_growing_circle = True
+
+# Main loop
+running = True
+font = pygame.font.Font(None, 36)
+menu_open = False
+header_rect = pygame.Rect(50, 50, 620, 40)  # Initialize header_rect
 
 while running:
     dt = clock.tick(framerate) / 1000.0
+    
+    # Update hue if enabled
     if change_hue:
         hue = (hue + dt * 10) % 360
         color = pygame.Color(0)
         color.hsva = (hue, 100, 100, 100)
     else:
-        color = pygame.Color(255, 255, 255)
-    
+        color = pygame.Color(255, 255, 255)  # Set color to white if change_hue is off
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_m:
-                menu_open = not menu_open
-                if menu_open:
-                    selected_modifier = list(modifiers.keys())[0] if modifiers else None
-            elif menu_open:
-                handle_modifier_selection(event, modifiers)
-            elif event.key == pygame.K_SPACE:
+            if event.key == pygame.K_SPACE:
                 new_ball = Ball(center[0], center[1], ball_size, get_random_color(), get_random_velocity())
                 balls.append(new_ball)
+            elif event.key == pygame.K_m:
+                menu_open = not menu_open
             elif event.key == pygame.K_1:
                 show_lines = not show_lines
-                notification_manager.add_notification(f"Lines turned {'on' if show_lines else 'off'}")
+                notification_manager.add_notification(f"Show lines turned {'on' if show_lines else 'off'}")
             elif event.key == pygame.K_2:
                 show_trail = not show_trail
-                notification_manager.add_notification(f"Trail turned {'on' if show_trail else 'off'}")
+                notification_manager.add_notification(f"Show trail turned {'on' if show_trail else 'off'}")
             elif event.key == pygame.K_3:
                 change_hue = not change_hue
                 notification_manager.add_notification(f"Change hue turned {'on' if change_hue else 'off'}")
             elif event.key == pygame.K_4:
                 show_background_growing_circle = not show_background_growing_circle
-                notification_manager.add_notification(f"Background reactive circle turned {'on' if show_background_growing_circle else 'off'}")
+                notification_manager.add_notification(f"Show background reactive circle turned {'on' if show_background_growing_circle else 'off'}")
             elif event.key == pygame.K_5:
                 show_collision_growing_circle = not show_collision_growing_circle
-                notification_manager.add_notification(f"Collision circle turned {'on' if show_collision_growing_circle else 'off'}")
+                notification_manager.add_notification(f"Show collision circle turned {'on' if show_collision_growing_circle else 'off'}")
+        elif event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.MOUSEBUTTONUP or event.type == pygame.MOUSEMOTION:
+            dragging, drag_offset = handle_mouse_events(event, header_rect, dragging, drag_offset)
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
-        if event.type == "ball_bounce":
-            apply_modifier("ball_bounce", ball)
 
     check_ball_collisions()
 
     growing_circles = [circle for circle in growing_circles if circle.update(dt) and circle.radius > 0]
 
     screen.fill((0, 0, 0))
-    
+
+    # Draw background growing circles be sure to draw this before the boundary and inner boundary
+    for circle in sorted(growing_circles, key=lambda c: c.layer):
+        if circle.layer == 0:
+            circle.draw(screen)
+
+    # Draw the boundary with the current hue color or white if change_hue is off
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+
+    # Draw inner boundary
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
+    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
+
+    # Draw all other growing circles
+    for circle in growing_circles:
+        if circle.layer != 0:
+            circle.draw(screen)
+            
+    for ball in balls:
+        ball.draw(screen)
+
     if menu_open:
-        draw_modifier_menu(screen, font, modifiers)
-    else:
-        for circle in sorted(growing_circles, key=lambda c: c.layer):
-            if circle.layer == 0:
-                circle.draw(screen)
+        menu_rect, header_rect, close_button, minimize_button = draw_modifier_menu(screen, font, modifiers, selected_modifier, expanded_modifier, dragging, drag_offset)
 
-        pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
-        pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
-
-        for circle in growing_circles:
-            if circle.layer != 0:
-                circle.draw(screen)
-
-        for ball in balls:
-            ball.draw(screen)
-        
-        notification_manager.update()
-        notification_manager.draw(screen)
+    notification_manager.update()
+    notification_manager.draw(screen)
 
     pygame.display.flip()
+
+pygame.quit()
+sys.exit()
