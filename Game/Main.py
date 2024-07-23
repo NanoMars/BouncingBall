@@ -1,6 +1,6 @@
-import pygame
-import sys
 import os
+import sys
+import pygame
 import numpy as np
 import random
 import time
@@ -20,32 +20,39 @@ framerate = 60
 
 midi_folder = os.path.join(os.path.dirname(__file__), 'MIDI')
 midi_files = [f for f in os.listdir(midi_folder) if f.endswith('.mid')]
-midi_path = os.path.join(midi_folder, midi_files[0])
-
-mid = mido.MidiFile(midi_path)
 
 midi_notes = []
-for msg in mid:
-    if not msg.is_meta:
-        if msg.type == 'note_on' or msg.type == 'note_off':
+if midi_files:
+    midi_path = os.path.join(midi_folder, midi_files[0])
+    mid = mido.MidiFile(midi_path)
+    for msg in mid:
+        if not msg.is_meta and (msg.type == 'note_on' or msg.type == 'note_off'):
             midi_notes.append(msg)
+else:
+    print("No MIDI files found. Skipping MIDI initialization.")
 
 # Initialize Pygame mixer
 pygame.mixer.init()
 pygame.midi.init()
-#midi_out = pygame.midi.Output(0)
 
 # Load sound
 sound_folder = os.path.join(os.path.dirname(__file__), 'Sounds')
-sound_file = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')][0]
-sound_path = os.path.join(sound_folder, sound_file)
-sound = pygame.mixer.Sound(sound_path)
+sound_files = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')]
+if sound_files:
+    sound_path = os.path.join(sound_folder, sound_files[0])
+    sound = pygame.mixer.Sound(sound_path)
+    sound_array = pygame.sndarray.array(sound)
+    sound_length = sound.get_length()
+    sample_rate = sound_array.shape[0] / sound_length
+else:
+    print("No sound files found. Skipping sound initialization.")
+    sound = None
+    sound_array = None
+    sound_length = 1
+    sample_rate = 1
 
 # Sound slicing variables
-sound_array = pygame.sndarray.array(sound)
-sound_length = sound.get_length()
 hue = 0
-sample_rate = sound_array.shape[0] / sound_length
 
 show_lines = True
 show_trail = True
@@ -110,11 +117,73 @@ def play_next_midi_notes():
     for sound in notes_to_play:
         sound.play()
         currently_playing_sounds.append(sound)
+
 # Constants
 gravity = np.array([0, 300], dtype='float64')  # Gravity vector
 air_resistance = 0.9995  # Air resistance coefficient (1 means no air resistance)
 ball_size = 100
 boundary_thickness = 10
+
+class Notification:
+    def __init__(self, message, index, duration=5):
+        self.message = message
+        self.timestamp = time.time()
+        self.duration = duration
+        self.fade_duration = 0.5
+        self.index = index
+        self.start_position = (10, screen_height)  # Start at the bottom of the screen
+        self.target_position = None  # Target position will be set later
+        self.current_position = self.start_position  # Initial current position
+        self.animation_timestamp = time.time()  # Separate timestamp for animation
+
+    def update(self):
+        return (time.time() - self.timestamp) < self.duration
+
+    def get_opacity(self):
+        elapsed = time.time() - self.timestamp
+        if elapsed < self.fade_duration:
+            return int((elapsed / self.fade_duration) * 255)
+        elif elapsed > self.duration - self.fade_duration:
+            return int(((self.duration - elapsed) / self.fade_duration) * 255)
+        else:
+            return 255
+
+    def update_position(self):
+        elapsed = time.time() - self.animation_timestamp
+        easing_time = min(elapsed, self.fade_duration)
+        easing_factor = 1 - (2 ** (-10 * easing_time / self.fade_duration))
+        self.current_position = (self.start_position[0], self.start_position[1] + (self.target_position[1] - self.start_position[1]) * easing_factor)
+
+    def draw(self, screen):
+        font = pygame.font.Font(None, 36)
+        text = font.render(self.message, True, (255, 255, 255))
+        text.set_alpha(self.get_opacity())
+        self.update_position()
+        screen.blit(text, self.current_position)
+
+class NotificationManager:
+    def __init__(self):
+        self.notifications = []
+
+    def add_notification(self, message):
+        base_position = (10, screen_height - 50)
+        for notification in self.notifications:
+            notification.index += 1  # Increment index of existing notifications
+            notification.start_position = notification.current_position  # Set start position to current position
+            notification.target_position = (base_position[0], base_position[1] - notification.index * 40)
+            notification.animation_timestamp = time.time()  # Update animation timestamp
+        new_notification = Notification(message, 0)
+        new_notification.start_position = (base_position[0], screen_height)
+        new_notification.target_position = base_position
+        self.notifications.append(new_notification)
+
+    def update(self):
+        current_time = time.time()
+        self.notifications = [n for n in self.notifications if n.update() and n.current_position[1] > -50]
+        
+    def draw(self, screen):
+        for notification in self.notifications:
+            notification.draw(screen)
 
 growing_circles = []
 
@@ -142,6 +211,7 @@ class GrowingCircle:
         
         # Draw filled circle
         pygame.gfxdraw.filled_circle(surface, int(self.radius), int(self.radius), int(self.radius), color_without_alpha + (int(self.alpha),))
+        
         
         # Draw anti-aliased outer edge
         pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_without_alpha + (int(self.alpha),))
@@ -193,6 +263,8 @@ class Ball:
         if show_lines:
             self.collision_points.append(collision_point)
             self.line_opacities.append(255)
+            # Ensure all line opacities are set to 255
+            self.line_opacities = [255 for _ in self.line_opacities]
 
         if show_collision_growing_circle:
             new_circle = GrowingCircle(collision_point[0], collision_point[1], 25, 10, self.color)
@@ -270,6 +342,13 @@ center = np.array([screen_width // 2, screen_height // 2], dtype='float64')
 circle_radius = 300
 balls = []  # Initialize an empty list for balls
 
+notification_manager = NotificationManager()
+
+if midi_files:
+    notification_manager.add_notification(f"MIDI file found: {midi_files[0]}")
+else:
+    notification_manager.add_notification("No MIDI file found")
+
 running = True
 while running:
     dt = clock.tick(framerate) / 1000.0
@@ -289,19 +368,19 @@ while running:
                 balls.append(new_ball)
             elif event.key == pygame.K_1:
                 show_lines = not show_lines
-                print("Show lines toggled:", show_lines)
+                notification_manager.add_notification(f"Show lines turned {'on' if show_lines else 'off'}")
             elif event.key == pygame.K_2:
                 show_trail = not show_trail
-                print("Show trail toggled:", show_trail)
+                notification_manager.add_notification(f"Show trail turned {'on' if show_trail else 'off'}")
             elif event.key == pygame.K_3:
                 change_hue = not change_hue
-                print("Change hue toggled:", change_hue)
+                notification_manager.add_notification(f"Change hue turned {'on' if change_hue else 'off'}")
             elif event.key == pygame.K_4:
                 show_background_growing_circle = not show_background_growing_circle
-                print("Show background growing circle toggled:", show_background_growing_circle)
+                notification_manager.add_notification(f"Show background reactive circle turned {'on' if show_background_growing_circle else 'off'}")
             elif event.key == pygame.K_5:
                 show_collision_growing_circle = not show_collision_growing_circle
-                print("Show collision growing circle toggled:", show_collision_growing_circle)
+                notification_manager.add_notification(f"Show collision circle turned {'on' if show_collision_growing_circle else 'off'}")
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
@@ -339,7 +418,12 @@ while running:
             
     for ball in balls:
         ball.draw(screen)
-    
+    # Inside the main loop
+    notification_manager.update()
+
+    # Draw notifications
+    notification_manager.draw(screen)
+
     pygame.display.flip()
 
 pygame.quit()
