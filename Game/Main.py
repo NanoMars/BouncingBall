@@ -134,19 +134,35 @@ def wrap_text(surface, text, x, y, max_width, font):
 
     return y  # Return the new y position without additional spacing
 
-def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset):
-    menu_width = max(620, max(font.size(name)[0] for name in modifiers.keys()) + 100)
-    menu_rect = pygame.Rect(50, 50, menu_width, 620)
-    header_rect = pygame.Rect(50, 50, menu_width, 40)
+def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset, minimized):
+    global menu_position
+    
+    # Calculate the width of the title plus the buttons
+    title_text = font.render("Modifiers", True, (255, 255, 255))
+    title_width = title_text.get_width()
+    button_width = 80  # 2 buttons of 20px each plus 20px spacing on each side
+    title_and_buttons_width = title_width + button_width + 20  # Extra 20px for padding
+    
+    if minimized:
+        menu_width = title_and_buttons_width
+    else:
+        # Calculate the width of the largest menu item
+        max_item_width = max(font.size(name)[0] for name in modifiers.keys()) + 100
+        # Determine the final menu width
+        menu_width = max(title_and_buttons_width, max_item_width)
+    
+    menu_rect = pygame.Rect(menu_position.x, menu_position.y, menu_width, 620)
+    header_rect = pygame.Rect(menu_position.x, menu_position.y, menu_width, 40)
 
     if dragging:
         menu_rect.topleft = pygame.Vector2(pygame.mouse.get_pos()) - drag_offset
         header_rect.topleft = menu_rect.topleft
 
-    # Clear the menu area before drawing
-    pygame.draw.rect(screen, (0, 0, 0), menu_rect)
+    # Draw the menu background only if not minimized
+    if not minimized:
+        pygame.draw.rect(screen, (0, 0, 0), menu_rect)
+        pygame.draw.rect(screen, (100, 100, 100, 128), menu_rect)
 
-    pygame.draw.rect(screen, (100, 100, 100, 128), menu_rect)
     pygame.draw.rect(screen, (150, 150, 150, 128), header_rect)
 
     header_text = font.render("Modifiers", True, (255, 255, 255))
@@ -154,12 +170,15 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
 
     close_button = pygame.Rect(header_rect.right - 30, header_rect.y + 5, 20, 20)
     minimize_button = pygame.Rect(header_rect.right - 60, header_rect.y + 5, 20, 20)
-    pygame.draw.rect(screen, (0, 0, 0), close_button)
-    pygame.draw.rect(screen, (0, 0, 0), minimize_button)
+    pygame.draw.rect(screen, (200, 0, 0), close_button)
+    pygame.draw.rect(screen, (200, 200, 0), minimize_button)
     close_text = font.render("X", True, (255, 255, 255))
     minimize_text = font.render("-", True, (255, 255, 255))
     screen.blit(close_text, (close_button.x + 5, close_button.y))
     screen.blit(minimize_text, (minimize_button.x + 5, minimize_button.y))
+
+    if minimized:
+        return menu_rect, header_rect, close_button, minimize_button
 
     y_offset = header_rect.height + 10
     buffer = 10  # Buffer size
@@ -170,24 +189,16 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
         background_color = (0, 255, 0, 128) if is_selected else (50, 50, 50, 0)  # 50% transparency for green, invisible otherwise
 
         # Render name
-        text_surface = font.render(f"hello{name}", True, (255, 255, 255))
+        text_surface = font.render(name, True, (255, 255, 255), (0,0,0))
+        text_surface.set_colorkey((0, 0, 0))
         text_width, text_height = font.size(name)
-
-        # Debugging info
-        print(f"Rendering name: {name}")
-        print(f"Text size for {name}: {text_width}x{text_height}")
-        print(f"Rendered text surface for {name}: {text_surface}")
 
         text_width += buffer * 2  # Add buffer to text width
         item_rect = pygame.Rect(menu_rect.x + 20, menu_rect.y + y_offset, text_width, 30)
         pygame.draw.rect(screen, background_color, item_rect)
 
-        # Ensure the text_surface is not None or empty
         if text_surface:
-            print(f"Blitting text_surface for {name} at position: {(menu_rect.x + 20 + buffer, menu_rect.y + y_offset)}")
             screen.blit(text_surface, (menu_rect.x + 20 + buffer, menu_rect.y + y_offset))
-        else:
-            print(f"Failed to render text_surface for {name}")
 
         triangle_color = (255, 255, 255)
         triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + 10), 
@@ -227,24 +238,25 @@ def toggle_modifier(modifier, selected_modifiers):
     else:
         selected_modifiers.append(modifier)
 
+# Global variables
+menu_position = pygame.Vector2(50, 50)  # Initial position of the menu
+
 def handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset):
-    global menu_open, expanded_modifier
+    global menu_open, menu_minimized, expanded_modifier, menu_position
     if event.type == pygame.MOUSEBUTTONDOWN:
-        if header_rect.collidepoint(event.pos):
-            dragging = True
-            drag_offset = pygame.Vector2(event.pos) - pygame.Vector2(header_rect.topleft)
-        elif close_button.collidepoint(event.pos):
+        if close_button.collidepoint(event.pos):
             menu_open = False
         elif minimize_button.collidepoint(event.pos):
-            menu_open = not menu_open
-            if not menu_open:
-                menu_rect.height = header_rect.height
-            else:
-                menu_rect.height = 620  # Restore original height or dynamically adjust
+            menu_minimized = not menu_minimized
+        elif header_rect.collidepoint(event.pos):
+            dragging = True
+            drag_offset = pygame.Vector2(event.pos) - pygame.Vector2(header_rect.topleft)
         expanded_modifier = handle_triangle_click(event, menu_rect, modifiers, expanded_modifier)
     elif event.type == pygame.MOUSEBUTTONUP:
         dragging = False
         drag_offset = None
+        # Save the new position when dragging stops
+        menu_position = pygame.Vector2(header_rect.topleft)
     elif event.type == pygame.MOUSEMOTION:
         if dragging:
             new_pos = pygame.Vector2(event.pos) - drag_offset
@@ -585,6 +597,18 @@ header_rect = pygame.Rect(50, 50, 620, 40)
 close_button = pygame.Rect(header_rect.right - 30, header_rect.y + 5, 20, 20)
 minimize_button = pygame.Rect(header_rect.right - 60, header_rect.y + 5, 20, 20)
 
+# Main loop
+running = True
+font = pygame.font.Font(None, 36)
+menu_open = False
+menu_minimized = False
+header_rect = pygame.Rect(50, 50, 620, 40)
+
+menu_rect = pygame.Rect(50, 50, 620, 620)
+header_rect = pygame.Rect(50, 50, 620, 40)
+close_button = pygame.Rect(header_rect.right - 30, header_rect.y + 5, 20, 20)
+minimize_button = pygame.Rect(header_rect.right - 60, header_rect.y + 5, 20, 20)
+
 while running:
     dt = clock.tick(framerate) / 1000.0
     
@@ -604,6 +628,7 @@ while running:
                 balls.append(new_ball)
             elif event.key == pygame.K_m:
                 menu_open = not menu_open
+                menu_minimized = False
             elif event.key == pygame.K_1:
                 show_lines = not show_lines
                 notification_manager.add_notification(f"Show lines turned {'on' if show_lines else 'off'}")
@@ -650,7 +675,7 @@ while running:
         ball.draw(screen)
 
     if menu_open:
-        menu_rect, header_rect, close_button, minimize_button = draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset)
+        menu_rect, header_rect, close_button, minimize_button = draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset, menu_minimized)
 
     notification_manager.update()
     notification_manager.draw(screen)
