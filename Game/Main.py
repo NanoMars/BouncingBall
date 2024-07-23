@@ -19,6 +19,9 @@ pygame.display.set_caption("Ball Bouncing Inside a Circle")
 clock = pygame.time.Clock()
 framerate = 60
 
+# Initialize font
+font = pygame.font.Font(None, 36)
+
 midi_folder = os.path.join(os.path.dirname(__file__), 'MIDI')
 midi_files = [f for f in os.listdir(midi_folder) if f.endswith('.mid')]
 
@@ -71,6 +74,9 @@ expanded_modifier = None
 current_midi_index = 0
 currently_playing_sounds = []
 
+def sanitize_name(name):
+    return ''.join(char for char in name if char.isprintable())
+
 def load_modifiers():
     modifiers = {}
     modifiers_folder = os.path.join(os.path.dirname(__file__), 'Modifiers')
@@ -97,8 +103,8 @@ modifiers = load_modifiers()
 selected_modifiers = []  # No initial selection
 expanded_modifier = None
 
-def wrap_text(surface, text, x, y, max_width):
-    words = text.split(' ')
+def wrap_text(surface, text, x, y, max_width, font):
+    words = text.replace('\n', ' ').split(' ')
     space_width, space_height = font.size(' ')
     lines = []
     current_line = []
@@ -117,22 +123,28 @@ def wrap_text(surface, text, x, y, max_width):
 
     lines.append(current_line)
 
+    y_initial = y  # Store the initial y position
+
     for line in lines:
         for word_surface in line:
             surface.blit(word_surface, (x, y))
             x += word_surface.get_width() + space_width
-        x = 10
+        x = menu_rect.x + 40  # Reset x position relative to the box
         y += space_height
-              
+
+    return y  # Return the new y position without additional spacing
 
 def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset):
-    menu_width = max(620, max(font.size(name)[0] for name in modifiers.keys()) + 100)  # Ensure it accounts for widest item
+    menu_width = max(620, max(font.size(name)[0] for name in modifiers.keys()) + 100)
     menu_rect = pygame.Rect(50, 50, menu_width, 620)
     header_rect = pygame.Rect(50, 50, menu_width, 40)
 
     if dragging:
         menu_rect.topleft = pygame.Vector2(pygame.mouse.get_pos()) - drag_offset
         header_rect.topleft = menu_rect.topleft
+
+    # Clear the menu area before drawing
+    pygame.draw.rect(screen, (0, 0, 0), menu_rect)
 
     pygame.draw.rect(screen, (100, 100, 100, 128), menu_rect)
     pygame.draw.rect(screen, (150, 150, 150, 128), header_rect)
@@ -150,28 +162,49 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
     screen.blit(minimize_text, (minimize_button.x + 5, minimize_button.y))
 
     y_offset = header_rect.height + 10
-
     buffer = 10  # Buffer size
+
     for i, (name, data) in enumerate(modifiers.items()):
+        name = sanitize_name(name)
         is_selected = name in selected_modifiers
         background_color = (0, 255, 0, 128) if is_selected else (50, 50, 50, 0)  # 50% transparency for green, invisible otherwise
-        text_surface = font.render(name, True, (255, 255, 255))
-        text_width = text_surface.get_width() + buffer * 2  # Add buffer to text width
-        item_rect = pygame.Rect(menu_rect.x + 20, menu_rect.y + y_offset + i * 40, text_width, 30)
+
+        # Render name
+        text_surface = font.render(f"hello{name}", True, (255, 255, 255))
+        text_width, text_height = font.size(name)
+
+        # Debugging info
+        print(f"Rendering name: {name}")
+        print(f"Text size for {name}: {text_width}x{text_height}")
+        print(f"Rendered text surface for {name}: {text_surface}")
+
+        text_width += buffer * 2  # Add buffer to text width
+        item_rect = pygame.Rect(menu_rect.x + 20, menu_rect.y + y_offset, text_width, 30)
         pygame.draw.rect(screen, background_color, item_rect)
-        screen.blit(text_surface, (menu_rect.x + 20 + buffer, menu_rect.y + y_offset + i * 40))  # Add buffer to text position
+
+        # Ensure the text_surface is not None or empty
+        if text_surface:
+            print(f"Blitting text_surface for {name} at position: {(menu_rect.x + 20 + buffer, menu_rect.y + y_offset)}")
+            screen.blit(text_surface, (menu_rect.x + 20 + buffer, menu_rect.y + y_offset))
+        else:
+            print(f"Failed to render text_surface for {name}")
 
         triangle_color = (255, 255, 255)
-        triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + i * 40 + 10), 
-                           (menu_rect.x + text_width + 40, menu_rect.y + y_offset + i * 40 + 20), 
-                           (menu_rect.x + text_width + 20, menu_rect.y + y_offset + i * 40 + 20)]
+        triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + 10), 
+                           (menu_rect.x + text_width + 40, menu_rect.y + y_offset + 20), 
+                           (menu_rect.x + text_width + 20, menu_rect.y + y_offset + 20)]
         if expanded_modifier == name:
-            triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + i * 40 + 20), 
-                               (menu_rect.x + text_width + 40, menu_rect.y + y_offset + i * 40 + 10), 
-                               (menu_rect.x + text_width + 20, menu_rect.y + y_offset + i * 40 + 10)]
+            triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + 20), 
+                               (menu_rect.x + text_width + 40, menu_rect.y + y_offset + 10), 
+                               (menu_rect.x + text_width + 20, menu_rect.y + y_offset + 10)]
         pygame.draw.polygon(screen, triangle_color, triangle_points)
+        
+        y_offset += 40
+
         if expanded_modifier == name:
-            wrap_text(screen, data["description"], menu_rect.x + 40, menu_rect.y + y_offset + i * 40 + 30, menu_width - 80)
+            description_y = menu_rect.y + y_offset  # Calculate relative to the menu rect
+            y_offset = wrap_text(screen, data["description"], menu_rect.x + 40, description_y, menu_width - 80, font) - menu_rect.y
+
     return menu_rect, header_rect, close_button, minimize_button
 
 def handle_modifier_selection(event, modifiers, selected_modifiers):
