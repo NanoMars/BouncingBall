@@ -1,4 +1,6 @@
 
+*.pyc
+
 # MP3 files
 *.mid
 

@@ -2,6 +2,8 @@ import os
 import sys
 import pygame
 import numpy as np
+import importlib
+import os
 import random
 import time
 import pygame.gfxdraw
@@ -62,6 +64,53 @@ show_collision_growing_circle = True
 
 current_midi_index = 0
 currently_playing_sounds = []
+
+def load_modifiers():
+    modifiers = {}
+    modifiers_folder = os.path.join(os.path.dirname(__file__), 'Modifiers')
+    print(f"Looking for modifiers in: {modifiers_folder}")  # Debug: Print the modifiers folder path
+    for filename in os.listdir(modifiers_folder):
+        print(f"Found file: {filename}")  # Debug: Print each found file
+        if filename.endswith('.py') and filename != '__init__.py':
+            module_name = filename[:-3]
+            try:
+                module = importlib.import_module(f'Modifiers.{module_name}')
+                if hasattr(module, 'modify'):
+                    modifiers[module_name] = module.modify
+                    print(f"Loaded modifier: {module_name}")  # Debug: Print loaded modifier
+                else:
+                    print(f"No 'modify' function in {module_name}")  # Debug: Print if 'modify' function is missing
+            except Exception as e:
+                print(f"Error loading {module_name}: {e}")  # Debug: Print any import errors
+    return modifiers
+
+modifiers = load_modifiers()
+selected_modifier = list(modifiers.keys())[0] if modifiers else None
+
+def draw_modifier_menu(screen, font, modifiers):
+    screen.fill((50, 50, 50))
+    y_offset = 100
+    for i, (name, func) in enumerate(modifiers.items()):
+        color = (255, 0, 0) if selected_modifier == name else (255, 255, 255)
+        text_surface = font.render(name, True, color)
+        print(f"Drawing {name} at position {100, y_offset + i * 40}")  # Debug: Print drawing positions
+        screen.blit(text_surface, (100, y_offset + i * 40))
+
+def handle_modifier_selection(event, modifiers):
+    global selected_modifier
+    keys = list(modifiers.keys())
+    if not selected_modifier and keys:
+        selected_modifier = keys[0]
+    if event.key == pygame.K_UP:
+        selected_modifier = keys[(keys.index(selected_modifier) - 1) % len(keys)]
+    elif event.key == pygame.K_DOWN:
+        selected_modifier = keys[(keys.index(selected_modifier) + 1) % len(keys)]
+    elif event.key == pygame.K_RETURN:
+        print(f"Selected modifier: {selected_modifier}")
+
+def apply_modifier(event_name, ball):
+    if selected_modifier and selected_modifier in modifiers:
+        modifiers[selected_modifier](event_name, ball, None)
 
 def adsr_envelope(t, attack, decay, sustain, release):
     total_samples = len(t)
@@ -350,6 +399,14 @@ else:
     notification_manager.add_notification("No MIDI file found")
 
 running = True
+font = pygame.font.Font(None, 36)
+menu_open = False
+
+modifiers = load_modifiers()
+print(modifiers)  # Debug: Print the loaded modifiers
+selected_modifier = list(modifiers.keys())[0] if modifiers else None
+print(selected_modifier)  # Debug: Print the selected modifier
+
 while running:
     dt = clock.tick(framerate) / 1000.0
     if change_hue:
@@ -363,27 +420,35 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
+            if event.key == pygame.K_m:
+                menu_open = not menu_open
+                if menu_open:
+                    selected_modifier = list(modifiers.keys())[0] if modifiers else None
+            elif menu_open:
+                handle_modifier_selection(event, modifiers)
+            elif event.key == pygame.K_SPACE:
                 new_ball = Ball(center[0], center[1], ball_size, get_random_color(), get_random_velocity())
                 balls.append(new_ball)
             elif event.key == pygame.K_1:
                 show_lines = not show_lines
-                notification_manager.add_notification(f"Show lines turned {'on' if show_lines else 'off'}")
+                notification_manager.add_notification(f"Lines turned {'on' if show_lines else 'off'}")
             elif event.key == pygame.K_2:
                 show_trail = not show_trail
-                notification_manager.add_notification(f"Show trail turned {'on' if show_trail else 'off'}")
+                notification_manager.add_notification(f"Trail turned {'on' if show_trail else 'off'}")
             elif event.key == pygame.K_3:
                 change_hue = not change_hue
                 notification_manager.add_notification(f"Change hue turned {'on' if change_hue else 'off'}")
             elif event.key == pygame.K_4:
                 show_background_growing_circle = not show_background_growing_circle
-                notification_manager.add_notification(f"Show background reactive circle turned {'on' if show_background_growing_circle else 'off'}")
+                notification_manager.add_notification(f"Background reactive circle turned {'on' if show_background_growing_circle else 'off'}")
             elif event.key == pygame.K_5:
                 show_collision_growing_circle = not show_collision_growing_circle
-                notification_manager.add_notification(f"Show collision circle turned {'on' if show_collision_growing_circle else 'off'}")
+                notification_manager.add_notification(f"Collision circle turned {'on' if show_collision_growing_circle else 'off'}")
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
+        if event.type == "ball_bounce":
+            apply_modifier("ball_bounce", ball)
 
     check_ball_collisions()
 
@@ -391,40 +456,24 @@ while running:
 
     screen.fill((0, 0, 0))
     
-    # Draw the background growing circles
-    for circle in sorted(growing_circles, key=lambda c: c.layer):
-        if circle.layer == 0:
-            circle.draw(screen)
+    if menu_open:
+        draw_modifier_menu(screen, font, modifiers)
+    else:
+        for circle in sorted(growing_circles, key=lambda c: c.layer):
+            if circle.layer == 0:
+                circle.draw(screen)
 
-    # Draw outer edge of the boundary with anti-aliasing
-    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
-    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+        pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+        pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
 
-    # Draw the inner boundary with anti-aliasing
-    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
-    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
+        for circle in growing_circles:
+            if circle.layer != 0:
+                circle.draw(screen)
 
-    
-            
-    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
-    
-    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
-
-    
-    # Draw all other growing circles
-    for circle in growing_circles:
-        if circle.layer != 0:
-            circle.draw(screen)
-            
-    for ball in balls:
-        ball.draw(screen)
-    # Inside the main loop
-    notification_manager.update()
-
-    # Draw notifications
-    notification_manager.draw(screen)
+        for ball in balls:
+            ball.draw(screen)
+        
+        notification_manager.update()
+        notification_manager.draw(screen)
 
     pygame.display.flip()
-
-pygame.quit()
-sys.exit()
