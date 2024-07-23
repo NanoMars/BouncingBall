@@ -137,28 +137,22 @@ def wrap_text(surface, text, x, y, max_width, font):
 def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset, minimized):
     global menu_position
     
-    # Calculate the width of the title plus the buttons
     title_text = font.render("Modifiers", True, (255, 255, 255))
     title_width = title_text.get_width()
-    button_width = 80  # 2 buttons of 20px each plus 20px spacing on each side
-    title_and_buttons_width = title_width + button_width + 20  # Extra 20px for padding
-    
-    if minimized:
-        menu_width = title_and_buttons_width
-    else:
-        # Calculate the width of the largest menu item
-        max_item_width = max(font.size(name)[0] for name in modifiers.keys()) + 100
-        # Determine the final menu width
-        menu_width = max(title_and_buttons_width, max_item_width)
+    button_width = 80
+    title_and_buttons_width = title_width + button_width + 20
+    max_item_width = max(font.size(name)[0] for name in modifiers.keys()) + 100
+    menu_width = max(title_and_buttons_width, max_item_width)
     
     menu_rect = pygame.Rect(menu_position.x, menu_position.y, menu_width, 620)
     header_rect = pygame.Rect(menu_position.x, menu_position.y, menu_width, 40)
+    item_rects = []
+    triangle_rects = []
 
     if dragging:
         menu_rect.topleft = pygame.Vector2(pygame.mouse.get_pos()) - drag_offset
         header_rect.topleft = menu_rect.topleft
 
-    # Draw the menu background only if not minimized
     if not minimized:
         pygame.draw.rect(screen, (0, 0, 0), menu_rect)
         pygame.draw.rect(screen, (100, 100, 100, 128), menu_rect)
@@ -178,22 +172,21 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
     screen.blit(minimize_text, (minimize_button.x + 5, minimize_button.y))
 
     if minimized:
-        return menu_rect, header_rect, close_button, minimize_button
+        return menu_rect, header_rect, close_button, minimize_button, item_rects, triangle_rects
 
     y_offset = header_rect.height + 10
-    buffer = 10  # Buffer size
+    buffer = 10
 
     for i, (name, data) in enumerate(modifiers.items()):
         name = sanitize_name(name)
         is_selected = name in selected_modifiers
-        background_color = (0, 255, 0, 128) if is_selected else (50, 50, 50, 0)  # 50% transparency for green, invisible otherwise
+        background_color = (0, 255, 0, 128) if is_selected else (50, 50, 50, 0)
 
-        # Render name
-        text_surface = font.render(name, True, (255, 255, 255), (0,0,0))
+        text_surface = font.render(name, True, (255, 255, 255), (0, 0, 0))
         text_surface.set_colorkey((0, 0, 0))
         text_width, text_height = font.size(name)
 
-        text_width += buffer * 2  # Add buffer to text width
+        text_width += buffer * 2
         item_rect = pygame.Rect(menu_rect.x + 20, menu_rect.y + y_offset, text_width, 30)
         pygame.draw.rect(screen, background_color, item_rect)
 
@@ -201,22 +194,27 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
             screen.blit(text_surface, (menu_rect.x + 20 + buffer, menu_rect.y + y_offset))
 
         triangle_color = (255, 255, 255)
-        triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + 10), 
-                           (menu_rect.x + text_width + 40, menu_rect.y + y_offset + 20), 
-                           (menu_rect.x + text_width + 20, menu_rect.y + y_offset + 20)]
+        triangle_x = menu_rect.x + text_width + 30
+        triangle_y = menu_rect.y + y_offset + 10
+        triangle_points = [(triangle_x, triangle_y), 
+                           (triangle_x + 10, triangle_y + 10), 
+                           (triangle_x - 10, triangle_y + 10)]
         if expanded_modifier == name:
-            triangle_points = [(menu_rect.x + text_width + 30, menu_rect.y + y_offset + 20), 
-                               (menu_rect.x + text_width + 40, menu_rect.y + y_offset + 10), 
-                               (menu_rect.x + text_width + 20, menu_rect.y + y_offset + 10)]
+            triangle_points = [(triangle_x, triangle_y + 10), 
+                               (triangle_x + 10, triangle_y), 
+                               (triangle_x - 10, triangle_y)]
         pygame.draw.polygon(screen, triangle_color, triangle_points)
         
+        triangle_rect = pygame.Rect(triangle_x - 10, triangle_y - 10, 20, 20)
+        triangle_rects.append((triangle_rect, name))
+        item_rects.append((item_rect, name))
         y_offset += 40
 
         if expanded_modifier == name:
-            description_y = menu_rect.y + y_offset  # Calculate relative to the menu rect
+            description_y = menu_rect.y + y_offset
             y_offset = wrap_text(screen, data["description"], menu_rect.x + 40, description_y, menu_width - 80, font) - menu_rect.y
 
-    return menu_rect, header_rect, close_button, minimize_button
+    return menu_rect, header_rect, close_button, minimize_button, item_rects, triangle_rects
 
 def handle_modifier_selection(event, modifiers, selected_modifiers):
     keys = list(modifiers.keys())
@@ -644,10 +642,15 @@ while running:
             elif event.key == pygame.K_5:
                 show_collision_growing_circle = not show_collision_growing_circle
                 notification_manager.add_notification(f"Show collision circle turned {'on' if show_collision_growing_circle else 'off'}")
-            elif menu_open:
-                handle_modifier_selection(event, modifiers, selected_modifiers)
         elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
             dragging, drag_offset = handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset)
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                for item_rect, modifier_name in item_rects:
+                    if item_rect.collidepoint(event.pos):
+                        toggle_modifier(modifier_name, selected_modifiers)
+                for triangle_rect, modifier_name in triangle_rects:
+                    if triangle_rect.collidepoint(event.pos):
+                        expanded_modifier = modifier_name if expanded_modifier != modifier_name else None
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
@@ -675,7 +678,7 @@ while running:
         ball.draw(screen)
 
     if menu_open:
-        menu_rect, header_rect, close_button, minimize_button = draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset, menu_minimized)
+        menu_rect, header_rect, close_button, minimize_button, item_rects, triangle_rects = draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset, menu_minimized)
 
     notification_manager.update()
     notification_manager.draw(screen)
