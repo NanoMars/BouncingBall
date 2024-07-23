@@ -127,9 +127,7 @@ class GrowingCircle:
         self.alpha = initial_alpha
         self.fade_rate = fade_rate  # Rate at which the alpha decreases
         self.layer = layer
-        
-        print("Initial color:", self.color)
-        
+
     def update(self, dt):
         self.radius += self.growth_rate * dt
         self.alpha -= self.fade_rate * dt
@@ -141,8 +139,14 @@ class GrowingCircle:
         surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         surface = surface.convert_alpha()
         color_without_alpha = self.color[:3]
-        pygame.gfxdraw.filled_circle(surface, int(self.radius), int(self.radius), int(self.radius), color_without_alpha)
-        surface.set_alpha(int(self.alpha))
+        
+        # Draw filled circle
+        pygame.gfxdraw.filled_circle(surface, int(self.radius), int(self.radius), int(self.radius), color_without_alpha + (int(self.alpha),))
+        
+        # Draw anti-aliased outer edge
+        pygame.gfxdraw.aacircle(surface, int(self.radius), int(self.radius), int(self.radius), color_without_alpha + (int(self.alpha),))
+        
+        # Blit the surface with transparency onto the main screen
         screen.blit(surface, (self.pos[0] - self.radius, self.pos[1] - self.radius))
 class Ball:
     def __init__(self, x, y, size, color, velocity):
@@ -152,10 +156,10 @@ class Ball:
         self.color = color
         self.velocity = np.array(velocity, dtype='float64')
         self.invulnerable = True
-        self.invulnerable_timer = 999999999  # 0.25 seconds of invulnerability
+        self.invulnerable_timer = 999999999
         self.has_bounced = False
-        self.collision_points = []  # Track collision points
-        self.line_opacities = []  # Track opacities of lines from collision points
+        self.collision_points = []
+        self.line_opacities = []
 
     def update(self, dt, center, circle_radius):
         self.velocity += gravity * dt
@@ -169,12 +173,11 @@ class Ball:
                 self.invulnerable = False
                 
         if show_trail:
-            new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -140, self.color, 70, 200)
+            new_circle = GrowingCircle(self.pos[0], self.pos[1], self.radius, -140, self.color, 150, 200)
             growing_circles.append(new_circle)
         
-        # Reduce opacity over time
         for i in range(len(self.line_opacities)):
-            self.line_opacities[i] = max(self.line_opacities[i] - dt * 255, 90)  # Reduce opacity
+            self.line_opacities[i] = max(self.line_opacities[i] - dt * 255, 90)
 
     def check_collision_with_boundary(self, center, circle_radius):
         to_center = self.pos - center
@@ -207,7 +210,26 @@ class Ball:
         if show_lines:
             for idx, point in enumerate(self.collision_points):
                 color_with_opacity = (*self.color[:3], int(self.line_opacities[idx]))  # Ensure it's an RGBA tuple
-                pygame.draw.line(surface, color_with_opacity, (int(point[0]), int(point[1])), (int(self.pos[0]), int(self.pos[1])), 1)
+                direction = np.array(self.pos) - np.array(point)
+                direction_length = np.linalg.norm(direction)
+                if direction_length > 5:  # Avoid division by zero or negative length
+                    direction = direction / direction_length  # Normalize the direction
+                    
+                    # Calculate the normal at the collision point
+                    normal = point - center
+                    normal_length = np.linalg.norm(normal)
+                    if normal_length > 0:
+                        normal = normal / normal_length  # Normalize the normal vector
+
+                        # Calculate the angle between the direction and the normal
+                        dot_product = np.dot(direction, normal)
+                        dot_product = np.clip(dot_product, -1.0, 1.0)  # Clip dot product to valid range for arccos
+                        angle = np.arccos(dot_product)  # Angle in radians
+                        
+                        # Shorten the line more as the angle increases
+                        shorten_factor = 5 + 2 * (angle / np.pi)
+                        new_point = np.array(point) + direction * shorten_factor
+                        pygame.draw.line(surface, color_with_opacity, (int(new_point[0]), int(new_point[1])), (int(self.pos[0]), int(self.pos[1])), 1)
         
         pygame.draw.circle(surface, self.color, (int(self.pos[0]), int(self.pos[1])), self.radius)
         pygame.draw.circle(surface, self.color, (int(self.pos[0]), int(self.pos[1])), self.radius, 1)
@@ -267,14 +289,19 @@ while running:
                 balls.append(new_ball)
             elif event.key == pygame.K_1:
                 show_lines = not show_lines
+                print("Show lines toggled:", show_lines)
             elif event.key == pygame.K_2:
                 show_trail = not show_trail
+                print("Show trail toggled:", show_trail)
             elif event.key == pygame.K_3:
                 change_hue = not change_hue
+                print("Change hue toggled:", change_hue)
             elif event.key == pygame.K_4:
                 show_background_growing_circle = not show_background_growing_circle
+                print("Show background growing circle toggled:", show_background_growing_circle)
             elif event.key == pygame.K_5:
                 show_collision_growing_circle = not show_collision_growing_circle
+                print("Show collision growing circle toggled:", show_collision_growing_circle)
 
     for ball in balls:
         ball.update(dt, center, circle_radius)
@@ -289,14 +316,21 @@ while running:
     for circle in sorted(growing_circles, key=lambda c: c.layer):
         if circle.layer == 0:
             circle.draw(screen)
+
+    # Draw outer edge of the boundary with anti-aliasing
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
+
+    # Draw the inner boundary with anti-aliasing
+    pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
+    pygame.gfxdraw.aacircle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
+
+    
             
     pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius + int(boundary_thickness / 2), color)
-    # Draw a black circle at the center
+    
     pygame.gfxdraw.filled_circle(screen, int(center[0]), int(center[1]), circle_radius - boundary_thickness, (0, 0, 0))
 
-
-
-    inner_radius = circle_radius - boundary_thickness
     
     # Draw all other growing circles
     for circle in growing_circles:
@@ -306,6 +340,7 @@ while running:
     for ball in balls:
         ball.draw(screen)
     
-
-    
     pygame.display.flip()
+
+pygame.quit()
+sys.exit()
