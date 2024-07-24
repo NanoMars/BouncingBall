@@ -1,35 +1,3 @@
-
+*.DS_Store
 *.pyc
-
-# MP3 files
 *.mid
-
-# MP3 files
-*.mp3
-
-# WAV files
-*.wav
-
-# FLAC files
-*.flac
-
-# AAC files
-*.aac
-
-# OGG files
-*.ogg
-
-# M4A files
-*.m4a
-
-# AIFF files
-*.aiff
-
-# WMA files
-*.wma
-
-# Other common sound formats
-*.alac
-*.ape
-*.mpc
-*.wv

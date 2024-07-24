@@ -6,8 +6,6 @@ import importlib
 import random
 import time
 import pygame.gfxdraw
-import pygame.sndarray
-from pygame import midi
 import mido
 
 # Initialize Pygame
@@ -32,28 +30,6 @@ if midi_files:
     for msg in mid:
         if not msg.is_meta and (msg.type == 'note_on' or msg.type == 'note_off'):
             midi_notes.append(msg)
-else:
-    print("No MIDI files found. Skipping MIDI initialization.")
-
-# Initialize Pygame mixer
-pygame.mixer.init()
-pygame.midi.init()
-
-# Load sound
-sound_folder = os.path.join(os.path.dirname(__file__), 'Sounds')
-sound_files = [f for f in os.listdir(sound_folder) if f.endswith('.mp3') or f.endswith('.wav')]
-if sound_files:
-    sound_path = os.path.join(sound_folder, sound_files[0])
-    sound = pygame.mixer.Sound(sound_path)
-    sound_array = pygame.sndarray.array(sound)
-    sound_length = sound.get_length()
-    sample_rate = sound_array.shape[0] / sound_length
-else:
-    print("No sound files found. Skipping sound initialization.")
-    sound = None
-    sound_array = None
-    sound_length = 1
-    sample_rate = 1
 
 color = (255, 255, 255)
 hue = 0
@@ -65,9 +41,6 @@ show_background_growing_circle = True
 show_collision_growing_circle = True
 
 # Variables for GUI
-menu_open = False
-dragging = False
-drag_offset = pygame.Vector2(0, 0)
 selected_modifier = None
 expanded_modifier = None
 click_processed = False  # Initialize click_processed flag
@@ -85,17 +58,12 @@ def load_modifiers():
     for filename in os.listdir(modifiers_folder):
         if filename.endswith('.py') and filename != '__init__.py':
             module_name = filename[:-3]
-            try:
-                module = importlib.import_module(f'Modifiers.{module_name}')
-                if hasattr(module, 'modify'):
-                    modifiers[module_name] = {
-                        "function": module.modify,
-                        "description": module.__doc__ or "No description available"
-                    }
-                else:
-                    print(f"No 'modify' function in {module_name}")
-            except Exception as e:
-                print(f"Error loading {module_name}: {e}")
+            module = importlib.import_module(f'Modifiers.{module_name}')
+            if hasattr(module, 'modify'):
+                modifiers[module_name] = {
+                    "function": module.modify,
+                    "description": module.__doc__ or "No description available"
+                }
     return modifiers
 
 modifiers = load_modifiers()
@@ -215,27 +183,12 @@ def draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_mod
 
     return menu_rect, header_rect, close_button, minimize_button, item_rects, triangle_rects
 
-def handle_modifier_selection(event, modifiers, selected_modifiers):
-    keys = list(modifiers.keys())
-    if event.key == pygame.K_UP:
-        current_index = keys.index(selected_modifiers[-1]) if selected_modifiers else 0
-        new_index = (current_index - 1) % len(keys)
-        toggle_modifier(keys[new_index], selected_modifiers)
-    elif event.key == pygame.K_DOWN:
-        current_index = keys.index(selected_modifiers[-1]) if selected_modifiers else 0
-        new_index = (current_index + 1) % len(keys)
-        toggle_modifier(keys[new_index], selected_modifiers)
-    elif event.key == pygame.K_RETURN:
-        if selected_modifiers:
-            print(f"Selected modifiers: {', '.join(selected_modifiers)}")
-
 def toggle_modifier(modifier, selected_modifiers):
     sanitized_modifier = sanitize_name(modifier)
     if sanitized_modifier in selected_modifiers:
         selected_modifiers.remove(sanitized_modifier)
     else:
         selected_modifiers.append(sanitized_modifier)
-    print(f"Selected modifiers: {selected_modifiers}")  # Debug print
 
 # Global variables
 menu_position = pygame.Vector2(50, 50)  # Initial position of the menu
@@ -266,12 +219,9 @@ def handle_triangle_click(event, triangle_rects, expanded_modifier, click_proces
     if event.type == pygame.MOUSEBUTTONDOWN and not click_processed:
         for triangle_rect, name in triangle_rects:
             if triangle_rect.collidepoint(event.pos):
-                print(f"Triangle clicked at: {event.pos} for modifier: {name}")  # Enhanced Debug statement
                 if expanded_modifier == name:
-                    print(f"Collapsing modifier: {name}")  # Debug statement
                     expanded_modifier = None
                 else:
-                    print(f"Expanding modifier: {name}")  # Debug statement
                     expanded_modifier = name
                 click_processed = True
                 break
@@ -279,16 +229,11 @@ def handle_triangle_click(event, triangle_rects, expanded_modifier, click_proces
 
 def apply_modifier(event_name, ball):
     global selected_modifiers
-    print(f"Applying modifiers for event: {event_name}, selected modifiers: {selected_modifiers}")  # Debug print
     if selected_modifiers:
         for modifier_name in selected_modifiers:
-            print(f"Checking if {modifier_name} is in modifiers dictionary.")  # Debug print
             if modifier_name in modifiers:
                 modifier_function = modifiers[modifier_name]["function"]
-                print(f"Calling modifier: {modifier_name} for event: {event_name}")  # Debug print
                 modifier_function(event_name, ball, None)
-            else:
-                print(f"Modifier {modifier_name} not found in the modifiers dictionary.")  # Debug print
 
 def adsr_envelope(t, attack, decay, sustain, release):
     total_samples = len(t)
@@ -382,7 +327,6 @@ class Notification:
         self.current_position = (self.start_position[0], self.start_position[1] + (self.target_position[1] - self.start_position[1]) * easing_factor)
 
     def draw(self, screen):
-        font = pygame.font.Font(None, 36)
         text = font.render(self.message, True, (255, 255, 255))
         text.set_alpha(self.get_opacity())
         self.update_position()
@@ -503,9 +447,7 @@ class Ball:
         play_next_midi_notes()
 
         # Apply modifier for ball bounce event
-        print(f"Collision detected at {collision_point}. Applying 'ball_bounce' modifier.")  # Debug print
         apply_modifier("ball_bounce", self)
-        print(f"Ball size after bounce: {self.size}, Ball radius: {self.radius}")  # Debug print
 
     def draw(self, screen):
         surface = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
@@ -598,10 +540,8 @@ show_collision_growing_circle = True
 
 # Main loop
 running = True
-font = pygame.font.Font(None, 36)
 menu_open = False
 menu_minimized = False
-header_rect = pygame.Rect(50, 50, 620, 40)
 
 menu_rect = pygame.Rect(50, 50, 620, 620)
 header_rect = pygame.Rect(50, 50, 620, 40)
@@ -646,6 +586,9 @@ while running:
                 show_collision_growing_circle = not show_collision_growing_circle
                 notification_manager.add_notification(f"Show collision circle turned {'on' if show_collision_growing_circle else 'off'}")
         elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+            # Define triangle_rects before usage
+            triangle_rects = []
+            menu_rect, header_rect, close_button, minimize_button, item_rects, triangle_rects = draw_modifier_menu(screen, font, modifiers, selected_modifiers, expanded_modifier, dragging, drag_offset, menu_minimized)
             dragging, drag_offset, click_processed = handle_mouse_events(event, menu_rect, header_rect, close_button, minimize_button, dragging, drag_offset, click_processed)
             if event.type == pygame.MOUSEBUTTONDOWN:
                 for item_rect, modifier_name in item_rects:
