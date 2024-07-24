@@ -6,6 +6,8 @@
 
 Interactive and expandable simulation of a bouncing ball which aims to provide a fun and educational platform for experimenting with physics and programming.
 
+![Demo](Demo.gif)
+
 ## Table of Contents
 - [Installation](#installation)
 - [Controls](#controls)
