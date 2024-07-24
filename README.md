@@ -1,8 +1,8 @@
 # Bouncing Ball
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.9-blue.svg)](https://www.python.org/)
-[![Pygame](https://img.shields.io/badge/Pygame-2.0.1-green.svg)](https://www.pygame.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![Pygame](https://img.shields.io/badge/Pygame-2.6.0-green.svg)](https://www.pygame.org/)
 
 Interactive and expandable simulation of a bouncing ball which aims to provide a fun and educational platform for experimenting with physics and programming.
 
