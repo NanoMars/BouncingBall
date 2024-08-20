@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![Pygame](https://img.shields.io/badge/Pygame-2.6.0-green.svg)](https://www.pygame.org/)
 
-Interactive and expandable simulation of a bouncing ball which aims to provide a fun and educational platform for experimenting with physics and programming.
+Interactive and expandable simulation of a bouncing ball. AI was used to aid in the development of this, spesifically (but not limited to) Physics, wrapping text, making the custom gui
 
 ![Demo](Demo.gif)
 
@@ -115,4 +115,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgements
 
-This project was made for [Hack Club Arcade](https://hackclub.com/arcade/). Special thanks to the Hack Club community for their support and inspiration.
+This project was made for [Hack Club Arcade](https://hackclub.com/arcade/). 
